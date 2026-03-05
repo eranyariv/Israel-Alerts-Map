@@ -1,0 +1,43 @@
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+const OREF_HEADERS = {
+  'Referer': 'https://www.oref.org.il/',
+  'X-Requested-With': 'XMLHttpRequest',
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Accept': 'application/json, text/plain, */*',
+  'Accept-Language': 'he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7',
+}
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    port: 5173,
+    proxy: {
+      // HTTPS proxy – used for live alerts and most history candidates
+      '/oref': {
+        target: 'https://www.oref.org.il',
+        changeOrigin: true,
+        secure: false,          // accept self-signed / mismatched certs
+        rewrite: path => path.replace(/^\/oref/, ''),
+        headers: OREF_HEADERS,
+      },
+      // HTTP proxy – some Oref endpoints still live on plain HTTP
+      '/oref-http': {
+        target: 'http://www.oref.org.il',
+        changeOrigin: true,
+        secure: false,
+        rewrite: path => path.replace(/^\/oref-http/, ''),
+        headers: OREF_HEADERS,
+      },
+      // alerts-history subdomain proxy
+      '/oref-history': {
+        target: 'https://alerts-history.oref.org.il',
+        changeOrigin: true,
+        secure: false,
+        rewrite: path => path.replace(/^\/oref-history/, ''),
+        headers: OREF_HEADERS,
+      },
+    },
+  },
+})

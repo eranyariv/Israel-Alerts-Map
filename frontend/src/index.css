@@ -1,0 +1,101 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Assistant', system-ui, sans-serif;
+  direction: rtl;
+  margin: 0;
+  padding: 0;
+  background: #0f172a;
+  color: #f1f5f9;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Leaflet overrides */
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  font-family: 'Assistant', sans-serif;
+}
+
+.leaflet-tooltip {
+  direction: rtl;
+  font-family: 'Assistant', sans-serif;
+  font-size: 13px;
+  border-radius: 8px;
+  border: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  padding: 6px 10px;
+}
+
+.leaflet-control-zoom {
+  border: none !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+}
+
+.leaflet-control-zoom a {
+  border-radius: 6px !important;
+  color: #1e293b !important;
+}
+
+/* React DatePicker RTL */
+.react-datepicker {
+  direction: rtl;
+  font-family: 'Assistant', sans-serif;
+}
+
+.react-datepicker__header {
+  text-align: center;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 4px;
+}
+
+/* Bottom sheet animation */
+.bottom-sheet-enter {
+  transform: translateY(100%);
+}
+
+.bottom-sheet-enter-active {
+  transform: translateY(0);
+  transition: transform 300ms ease-out;
+}
+
+.bottom-sheet-exit-active {
+  transform: translateY(100%);
+  transition: transform 300ms ease-in;
+}
+
+/* Alert pulse animation */
+@keyframes alertPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.alert-pulse {
+  animation: alertPulse 1s ease-in-out infinite;
+}
+
+/* Legend gradient */
+.heatmap-legend {
+  background: linear-gradient(to left, #dc2626, #ea580c, #eab308, #84cc16, #16a34a);
+  height: 10px;
+  border-radius: 5px;
+}
