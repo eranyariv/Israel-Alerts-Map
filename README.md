@@ -2,7 +2,7 @@
 
 An interactive heatmap of Israeli Home Front Command (Pikud HaOref) alerts, built with React and Leaflet.
 
-**Live site:** [yariv.org/israel-alerts](https://yariv.org/israel-alerts/)
+**Live site:** [yariv.org/map](https://yariv.org/map/)
 
 ![Map screenshot showing alert heatmap over Israel](https://raw.githubusercontent.com/eranyariv/Israel-Alerts-Map/main/docs/screenshot.png)
 
