@@ -8,7 +8,20 @@ import { getHeatColor } from '../utils/heatmap'
 const ISRAEL_CENTER = [31.0461, 34.8516]
 const DEFAULT_ZOOM  = 7
 
-function LocateControl() {
+// Simplified silhouette of the State of Israel
+const IsraelIcon = ({ color = '#cbd5e1' }) => (
+  <svg width="13" height="20" viewBox="0 0 20 34" style={{ fill: color, display: 'block' }}>
+    <path d="M1,2 L15,1 L18,5 L17,10 L18,14 L16,18 L15,22 L13,26 L10,33 L7,27 L4,22 L3,17 L2,12 L1,7 Z" />
+  </svg>
+)
+
+const BTN_STYLE = {
+  width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center',
+  background: '#1e293b', border: '1px solid #475569', borderRadius: 8,
+  cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+}
+
+function MapControls() {
   const map = useMap()
   const [locating, setLocating] = useState(false)
 
@@ -26,22 +39,19 @@ function LocateControl() {
     map.locate({ setView: true, maxZoom: 13 })
   }
 
+  const handleReset = (e) => {
+    e.preventDefault()
+    map.flyTo(ISRAEL_CENTER, DEFAULT_ZOOM, { duration: 1.2 })
+  }
+
   return (
     <div className="leaflet-bottom leaflet-right" style={{ marginBottom: '30px', marginRight: '12px' }}>
-      <div className="leaflet-control leaflet-bar" style={{ border: 'none' }}>
-        <button
-          onClick={handleLocate}
-          title="מיקום נוכחי"
-          style={{
-            width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: '#1e293b', border: '1px solid #475569', borderRadius: 8,
-            cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
-          }}
-        >
-          <Locate
-            size={17}
-            style={{ color: locating ? '#60a5fa' : '#cbd5e1', transition: 'color 0.2s' }}
-          />
+      <div className="leaflet-control" style={{ border: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <button onClick={handleReset} title="חזרה לתצוגת ישראל" style={BTN_STYLE}>
+          <IsraelIcon />
+        </button>
+        <button onClick={handleLocate} title="מיקום נוכחי" style={BTN_STYLE}>
+          <Locate size={17} style={{ color: locating ? '#60a5fa' : '#cbd5e1', transition: 'color 0.2s' }} />
         </button>
       </div>
     </div>
@@ -227,7 +237,7 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode }) {
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
 
-      <LocateControl />
+      <MapControls />
       <LiveFlyTo currentAlerts={currentAlerts} />
       <FlyToArea areaName={flyToArea} zones={zones} />
 
