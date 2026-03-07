@@ -156,12 +156,21 @@ export function useAlerts() {
           const alert  = parseTzevaadomItem(msg.data ?? {}, lookup)
           if (alert) {
             saveAlerts([alert])
-            setCurrentAlerts([alert])
+            // Merge into existing alerts — don't replace (multiple simultaneous alerts)
+            setCurrentAlerts(prev => {
+              const without = prev.filter(a => a.id !== alert.id)
+              return [...without, alert]
+            })
             setStoredCount(historyCount())
           }
         } else {
-          // EXIT, ALL_CLEAR, SYSTEM_MESSAGE — alert ended
-          setCurrentAlerts([])
+          // EXIT, ALL_CLEAR, SYSTEM_MESSAGE — one alert ended.
+          // Refresh from REST to get authoritative state rather than blindly clearing all.
+          log.info('[ws] alert ended — refreshing live state from REST')
+          fetchTzevaadomSnapshot()
+            .then(alerts => { setCurrentAlerts(alerts); setLastRefresh(new Date()) })
+            .catch(err => { log.warn('[ws] post-exit refresh failed', err.message); setCurrentAlerts([]) })
+          return
         }
         setLastRefresh(new Date())
       } catch (err) {
