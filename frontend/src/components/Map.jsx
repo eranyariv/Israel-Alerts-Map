@@ -1,19 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { MapContainer, TileLayer, GeoJSON, useMap } from 'react-leaflet'
 import L from 'leaflet'
-import { Locate } from 'lucide-react'
+import { Locate, Maximize2 } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
 import { getHeatColor } from '../utils/heatmap'
 
 const ISRAEL_CENTER = [31.0461, 34.8516]
 const DEFAULT_ZOOM  = 7
-
-// Simplified silhouette of the State of Israel
-const IsraelIcon = ({ color = '#cbd5e1' }) => (
-  <svg width="13" height="20" viewBox="0 0 20 34" style={{ fill: color, display: 'block' }}>
-    <path d="M1,2 L15,1 L18,5 L17,10 L18,14 L16,18 L15,22 L13,26 L10,33 L7,27 L4,22 L3,17 L2,12 L1,7 Z" />
-  </svg>
-)
 
 const BTN_STYLE = {
   width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -48,7 +41,7 @@ function MapControls() {
     <div className="leaflet-bottom leaflet-right" style={{ marginBottom: '30px', marginRight: '12px' }}>
       <div className="leaflet-control" style={{ border: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
         <button onClick={handleReset} title="חזרה לתצוגת ישראל" style={BTN_STYLE}>
-          <IsraelIcon />
+          <Maximize2 size={17} style={{ color: '#cbd5e1' }} />
         </button>
         <button onClick={handleLocate} title="מיקום נוכחי" style={BTN_STYLE}>
           <Locate size={17} style={{ color: locating ? '#60a5fa' : '#cbd5e1', transition: 'color 0.2s' }} />
