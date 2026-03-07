@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eran Yariv — Projects</title>
+  <meta name="description" content="Personal projects by Eran Yariv" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f172a;
+      --surface:   #1e293b;
+      --border:    #334155;
+      --text:      #e2e8f0;
+      --muted:     #94a3b8;
+      --accent:    #3b82f6;
+      --accent-h:  #60a5fa;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    /* ── Header ────────────────────────────────────────────────── */
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 3.5rem 1.5rem 3rem;
+      text-align: center;
+      background: linear-gradient(180deg, #1e3a5f22 0%, transparent 100%);
+    }
+
+    .avatar {
+      width: 72px; height: 72px;
+      background: linear-gradient(135deg, var(--accent), #8b5cf6);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 2rem;
+      margin: 0 auto 1.25rem;
+      box-shadow: 0 0 0 4px #1e3a5f, 0 0 0 6px var(--accent);
+    }
+
+    h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; }
+    h1 span { color: var(--accent); }
+
+    .tagline {
+      margin-top: 0.5rem;
+      color: var(--muted);
+      font-size: 1rem;
+      max-width: 480px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* ── Main grid ─────────────────────────────────────────────── */
+    main {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem 5rem;
+    }
+
+    .section-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 1.5rem;
+    }
+
+    .projects {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1.25rem;
+    }
+
+    /* ── Project card ──────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.5rem;
+      text-decoration: none;
+      color: inherit;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      opacity: 0;
+      transition: opacity 0.2s;
+      background: radial-gradient(circle at 50% 0%, var(--card-color, var(--accent))18 0%, transparent 70%);
+    }
+
+    .card:hover {
+      border-color: var(--card-color, var(--accent));
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      transform: translateY(-2px);
+    }
+
+    .card:hover::before { opacity: 1; }
+
+    .card-icon {
+      width: 44px; height: 44px;
+      background: var(--card-color, var(--accent));
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.4rem;
+      flex-shrink: 0;
+      opacity: 0.9;
+    }
+
+    .card-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      line-height: 1.3;
+    }
+
+    .card-desc {
+      font-size: 0.875rem;
+      color: var(--muted);
+      flex: 1;
+    }
+
+    .card-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-top: 0.25rem;
+    }
+
+    .tag {
+      font-size: 0.7rem;
+      font-weight: 500;
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.06);
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+
+    .card-arrow {
+      position: absolute;
+      top: 1.25rem;
+      right: 1.25rem;
+      color: var(--muted);
+      font-size: 1rem;
+      opacity: 0;
+      transition: opacity 0.2s, transform 0.2s;
+    }
+
+    .card:hover .card-arrow {
+      opacity: 1;
+      transform: translate(2px, -2px);
+    }
+
+    /* ── Footer ────────────────────────────────────────────────── */
+    footer {
+      text-align: center;
+      padding: 2rem 1rem;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    footer a { color: var(--muted); text-decoration: none; }
+    footer a:hover { color: var(--text); }
+
+    @media (max-width: 480px) {
+      h1 { font-size: 1.6rem; }
+      .projects { grid-template-columns: 1fr; }
+    }
+  </style>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-2E6MR26PJW"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-2E6MR26PJW');
+  </script>
+</head>
+<body>
+
+  <header>
+    <div class="avatar">👨‍💻</div>
+    <h1>Eran <span>Yariv</span></h1>
+    <p class="tagline">A collection of personal projects — maps, data, and tools.</p>
+  </header>
+
+  <main>
+    <p class="section-title">Projects</p>
+
+    <div class="projects">
+
+      <!-- Israel Alerts Map -->
+      <a class="card" href="/map/" style="--card-color: #ef4444;">
+        <div class="card-icon" style="background:none;padding:2px;"><img src="/map/logo.png" alt="מפת חוסן ישראל" style="width:40px;height:40px;object-fit:contain;border-radius:8px;"></div>
+        <div class="card-title">Israel Alerts Map<br><small style="font-weight:400;font-size:0.8rem;color:#94a3b8;">מפת התראות ישראל</small></div>
+        <div class="card-desc">
+          Live and historical Home Front Command (Pikud HaOref) alerts visualized
+          as a heatmap over Israel's alert zones. Filter by date range or conflict.
+        </div>
+        <div class="card-tags">
+          <span class="tag">React</span>
+          <span class="tag">Leaflet</span>
+          <span class="tag">Oref API</span>
+          <span class="tag">GeoJSON</span>
+        </div>
+        <span class="card-arrow">↗</span>
+      </a>
+
+      <!-- Placeholder for future projects -->
+      <!-- To add a new project, copy the <a class="card"> block above and update the content -->
+
+    </div>
+  </main>
+
+  <footer>
+    <p>Eran Yariv &nbsp;·&nbsp; <a href="https://github.com/eranyariv" target="_blank" rel="noopener">GitHub</a></p>
+  </footer>
+
+</body>
+</html>

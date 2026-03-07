@@ -1,0 +1,36 @@
+Options -Indexes
+DirectoryIndex index.php index.html
+
+# Never cache HTML files (so deployments take effect immediately)
+<FilesMatch "\.html$">
+  Header set Cache-Control "no-cache, no-store, must-revalidate"
+  Header set Pragma "no-cache"
+  Header set Expires "0"
+</FilesMatch>
+
+# Cache hashed assets for 1 year
+<FilesMatch "\.(js|css)$">
+  Header set Cache-Control "public, max-age=31536000, immutable"
+</FilesMatch>
+
+RewriteEngine On
+
+# Proxy /tzevaadom/* → api/proxy.php?host=tzevaadom-api&path=*
+RewriteRule ^tzevaadom/(.+)$ /api/proxy.php?host=tzevaadom-api&path=$1 [L,QSA]
+
+# Proxy /tzevaadom-static/* → api/proxy.php?host=tzevaadom-static&path=*
+RewriteRule ^tzevaadom-static/(.+)$ /api/proxy.php?host=tzevaadom-static&path=$1 [L,QSA]
+
+# Proxy /oref/* → api/proxy.php?host=oref&path=*
+RewriteRule ^oref/(.+)$ /api/proxy.php?host=oref&path=$1 [L,QSA]
+
+# Proxy /oref-http/* → api/proxy.php?host=oref-http&path=*
+RewriteRule ^oref-http/(.+)$ /api/proxy.php?host=oref-http&path=$1 [L,QSA]
+
+# Proxy /oref-history/* → api/proxy.php?host=oref-history&path=*
+RewriteRule ^oref-history/(.+)$ /api/proxy.php?host=oref-history&path=$1 [L,QSA]
+
+# SPA fallback for /map/* (client-side routing)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^map/(.*)$ /map/index.html [L]

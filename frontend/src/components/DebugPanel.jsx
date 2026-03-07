@@ -39,7 +39,7 @@ function LogEntry({ entry }) {
   )
 }
 
-export default function DebugPanel() {
+export default function DebugPanel({ shown }) {
   const [open,    setOpen]    = useState(false)
   const [entries, setEntries] = useState([])
   const [filter,  setFilter]  = useState('all') // all | error | warn | success
@@ -67,18 +67,20 @@ export default function DebugPanel() {
     navigator.clipboard.writeText(text)
   }
 
+  // Close panel when hidden via external toggle
+  useEffect(() => { if (!shown) setOpen(false) }, [shown])
+
   const errorCount = entries.filter(e => e.level === 'error').length
   const warnCount  = entries.filter(e => e.level === 'warn').length
 
   return (
     <>
-      {/* Toggle button – bottom-right */}
-      <button
+      {/* Toggle button – bottom-right, only when shown */}
+      {shown && <button
         onClick={() => setOpen(o => !o)}
-        className="fixed bottom-4 right-4 z-50 flex items-center gap-2 px-3 py-2
+        className="fixed bottom-4 right-24 z-50 flex items-center gap-2 px-3 py-2
                    bg-slate-800 border border-slate-600 rounded-full shadow-lg
-                   text-slate-300 hover:text-white transition-colors text-xs font-mono
-                   md:bottom-4 md:right-4"
+                   text-slate-300 hover:text-white transition-colors text-xs font-mono"
         title="פתח/סגור דיבאג"
       >
         <Bug size={14} className={errorCount > 0 ? 'text-red-400' : warnCount > 0 ? 'text-yellow-400' : 'text-slate-400'} />
@@ -86,7 +88,7 @@ export default function DebugPanel() {
         {errorCount > 0 && (
           <span className="bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5 leading-none">{errorCount}</span>
         )}
-      </button>
+      </button>}
 
       {/* Panel */}
       {open && (

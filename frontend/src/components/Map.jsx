@@ -81,12 +81,12 @@ function LiveFlyTo({ currentAlerts }) {
   return null
 }
 
-export default function Map({ heatmapData, currentAlerts, flyToArea }) {
+export default function Map({ heatmapData, currentAlerts, flyToArea, mode }) {
   const [zones, setZones] = useState(null)
 
   // Load GeoJSON once
   useEffect(() => {
-    fetch('/alertZones.geojson')
+    fetch(`${import.meta.env.BASE_URL}alertZones.geojson`)
       .then(r => r.json())
       .then(setZones)
       .catch(e => console.error('Failed to load alertZones.geojson', e))
@@ -95,6 +95,22 @@ export default function Map({ heatmapData, currentAlerts, flyToArea }) {
   const counts    = heatmapData?.counts    ?? {}
   const lastAlert = heatmapData?.lastAlert ?? {}
   const maxCount  = heatmapData?.max_count ?? 1
+  const byCity    = heatmapData?.byCity    ?? {}
+
+  const CAT_LABELS = {
+    1: 'ירי רקטות וטילים',
+    2: 'חדירת כלי טיס עויין',
+    3: 'חדירת מחבלים',
+    4: 'רעידת אדמה',
+  }
+  const CAT_COLORS = { 1: '#ef4444', 2: '#f97316', 3: '#a855f7', 4: '#06b6d4' }
+
+  // Live mode: set of currently-alerted zone names
+  const liveZones    = new Set(currentAlerts.flatMap(a => a.cities ?? []))
+  const liveAlertMap = {}  // city → alert title
+  for (const a of currentAlerts)
+    for (const city of a.cities ?? [])
+      liveAlertMap[city] = a.title || a.cat
 
   function fmtDate(iso) {
     if (!iso) return null
@@ -110,7 +126,22 @@ export default function Map({ heatmapData, currentAlerts, flyToArea }) {
   }
 
   const getStyle = (feature) => {
-    const count = counts[feature.properties.name] ?? 0
+    const name = feature.properties.name
+    if (mode === 'live') {
+      if (liveZones.has(name)) return {
+        fillColor:   '#ef4444',
+        fillOpacity: 0.75,
+        color:       '#ef4444',
+        weight:      2,
+      }
+      return {
+        fillColor:   '#1e3a5f',
+        fillOpacity: 0.08,
+        color:       '#2d4a6b',
+        weight:      0.3,
+      }
+    }
+    const count = counts[name] ?? 0
     if (count === 0) return {
       fillColor:   '#1e3a5f',
       fillOpacity: 0.12,
@@ -128,6 +159,20 @@ export default function Map({ heatmapData, currentAlerts, flyToArea }) {
 
   const onEachFeature = (feature, layer) => {
     const name  = feature.properties.name
+    if (mode === 'live') {
+      const active = liveZones.has(name)
+      layer.bindTooltip(
+        `<div dir="rtl" style="font-family:Assistant,sans-serif;min-width:130px">
+           <div style="font-weight:700;font-size:14px;margin-bottom:4px">${name}</div>
+           ${active
+             ? `<div style="color:#ef4444;font-weight:600;font-size:13px">⚠️ התראה פעילה</div>
+                <div style="color:#94a3b8;font-size:11px;margin-top:2px">${liveAlertMap[name] || ''}</div>`
+             : `<div style="color:#94a3b8;font-size:12px">אין התראות פעילות</div>`}
+         </div>`,
+        { direction: 'top', sticky: false }
+      )
+      return
+    }
     const count = counts[name] ?? 0
     const last  = fmtDate(lastAlert[name])
     layer.bindTooltip(
@@ -136,14 +181,37 @@ export default function Map({ heatmapData, currentAlerts, flyToArea }) {
          ${count > 0 ? `
            <div style="color:${getHeatColor(count, maxCount)};font-weight:600;font-size:13px">${count} התראות</div>
            ${last ? `<div style="color:#94a3b8;font-size:11px;margin-top:2px">אחרון: ${last}</div>` : ''}
+           <div style="color:#475569;font-size:10px;margin-top:4px">לחץ לרשימה מלאה</div>
          ` : `<div style="color:#94a3b8;font-size:12px">אין התראות</div>`}
        </div>`,
       { direction: 'top', sticky: false }
     )
+
+    const alerts = byCity[name]
+    if (alerts?.length) {
+      layer.bindPopup(() => {
+        const rows = alerts.map(a => {
+          const dt    = fmtDate(a.savedAt) || ''
+          const label = CAT_LABELS[a.cat] || a.title || 'התראה'
+          const color = CAT_COLORS[a.cat] || '#94a3b8'
+          return `<div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid #1e293b">
+            <span style="color:#64748b;font-size:11px;font-family:monospace;white-space:nowrap;direction:ltr">${dt}</span>
+            <span style="color:${color};font-size:12px;flex:1">${label}</span>
+          </div>`
+        }).join('')
+        return `<div dir="rtl" style="font-family:Assistant,sans-serif;width:290px">
+          <div style="font-weight:700;font-size:15px;color:#f1f5f9;margin-bottom:2px">${name}</div>
+          <div style="font-size:12px;color:#64748b;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid #334155">${alerts.length} התראות</div>
+          <div style="max-height:300px;overflow-y:auto">${rows}</div>
+        </div>`
+      }, { maxWidth: 340 })
+    }
   }
 
-  // key forces full re-render when alert counts change
-  const zonesKey = `zones-${heatmapData?.total ?? 0}-${maxCount}`
+  // key forces full re-render when data changes
+  const zonesKey = mode === 'live'
+    ? `live-${currentAlerts.map(a => a.id).join(',')}-${liveZones.size}`
+    : `zones-${heatmapData?.total ?? 0}-${maxCount}`
 
   return (
     <div dir="ltr" className="w-full h-full">

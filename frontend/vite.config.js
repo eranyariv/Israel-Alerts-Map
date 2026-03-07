@@ -11,6 +11,7 @@ const OREF_HEADERS = {
 
 export default defineConfig({
   plugins: [react()],
+  base: '/map/',
   server: {
     port: 5173,
     proxy: {
@@ -37,6 +38,22 @@ export default defineConfig({
         secure: false,
         rewrite: path => path.replace(/^\/oref-history/, ''),
         headers: OREF_HEADERS,
+      },
+      // tzevaadom REST API proxy (CORS restricted to their own origin)
+      '/tzevaadom': {
+        target: 'https://api.tzevaadom.co.il',
+        changeOrigin: true,
+        secure: false,
+        rewrite: path => path.replace(/^\/tzevaadom/, ''),
+        headers: { 'Origin': 'https://www.tzevaadom.co.il', 'Referer': 'https://www.tzevaadom.co.il/' },
+      },
+      // tzevaadom static assets (cities.json)
+      '/tzevaadom-static': {
+        target: 'https://www.tzevaadom.co.il',
+        changeOrigin: true,
+        secure: false,
+        rewrite: path => path.replace(/^\/tzevaadom-static/, ''),
+        headers: { 'Origin': 'https://www.tzevaadom.co.il', 'Referer': 'https://www.tzevaadom.co.il/' },
       },
     },
   },

@@ -102,11 +102,15 @@ export default function FilterPanel({ categories, from, to, onChange }) {
                      [color-scheme:dark] cursor-pointer"
         >
           <option value="" disabled>בחר מבצע / מלחמה…</option>
-          {CONFLICTS.map((c, i) => (
-            <option key={i} value={i}>
-              {c.label} ({c.from.slice(0, 7).split('-').reverse().join('/')})
-            </option>
-          ))}
+          {CONFLICTS.map((c, i) => {
+            const fmt = d => d.split('-').reverse().join('/')
+            const toLabel = c.to === TODAY ? 'היום' : fmt(c.to)
+            return (
+              <option key={i} value={i}>
+                {c.label} ({fmt(c.from)} – {toLabel})
+              </option>
+            )
+          })}
         </select>
 
         <div className="space-y-2">
