@@ -110,7 +110,7 @@ export default function App() {
 
   const renderSidebarContent = () => {
     if (mode === 'live') {
-      return <LivePanel currentAlerts={visibleAlerts} lastRefresh={lastRefresh} loading={loading} />
+      return <LivePanel currentAlerts={visibleAlerts} lastRefresh={lastRefresh} loading={loading} onAreaClick={setFlyToArea} />
     }
     switch (sidebarTab) {
       case 'stats':   return <StatsPanel heatmapData={heatmapData} storedCount={storedCount} onClearHistory={wipeHistory} loading={loading} filters={filters} onAreaClick={setFlyToArea} />
@@ -299,7 +299,7 @@ export default function App() {
         }
       >
         {bottomSheetTab === 'live'
-          ? <LivePanel currentAlerts={visibleAlerts} lastRefresh={lastRefresh} loading={loading} />
+          ? <LivePanel currentAlerts={visibleAlerts} lastRefresh={lastRefresh} loading={loading} onAreaClick={setFlyToArea} />
           : bottomSheetTab === 'stats'
             ? <StatsPanel heatmapData={heatmapData} storedCount={storedCount} onClearHistory={wipeHistory} loading={loading} filters={filters} onAreaClick={setFlyToArea} />
             : <FilterPanel {...filters} onChange={handleFilterChange} />

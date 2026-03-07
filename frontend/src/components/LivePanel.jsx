@@ -8,7 +8,7 @@ const CAT_LABELS = {
   4: 'רעידת אדמה',
 }
 
-export default function LivePanel({ currentAlerts, lastRefresh, loading }) {
+export default function LivePanel({ currentAlerts, lastRefresh, loading, onAreaClick }) {
   const isQuiet = currentAlerts.length === 0
 
   return (
@@ -49,9 +49,15 @@ export default function LivePanel({ currentAlerts, lastRefresh, loading }) {
           {alert.cities?.length > 0 && (
             <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
               {alert.cities.map(city => (
-                <div key={city} className="flex items-center gap-2 text-xs text-slate-300">
+                <div key={city} className="flex items-center gap-2 text-xs">
                   <MapPin size={10} className="text-slate-500 shrink-0" />
-                  {city}
+                  <button
+                    onClick={() => onAreaClick?.(city)}
+                    className="text-slate-300 hover:text-blue-400 hover:underline transition-colors text-right"
+                    title={city}
+                  >
+                    {city}
+                  </button>
                 </div>
               ))}
             </div>
