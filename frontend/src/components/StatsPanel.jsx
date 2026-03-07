@@ -8,6 +8,11 @@ function formatDate(d) {
   try { return format(new Date(d), 'dd/MM/yyyy', { locale: he }) } catch { return '—' }
 }
 
+function formatDateTime(d) {
+  if (!d) return null
+  try { return format(new Date(d), 'dd/MM/yyyy HH:mm', { locale: he }) } catch { return null }
+}
+
 function CityRow({ rank, city, count, maxCount, barColor, onAreaClick }) {
   return (
     <div className="flex items-center justify-between gap-2">
@@ -54,7 +59,8 @@ export default function StatsPanel({ heatmapData, storedCount, onClearHistory, l
   const byCat     = heatmapData?.by_cat  ?? {}
   const allCities = heatmapData?.cities  ?? []
 
-  const lastAlert = heatmapData?.lastAlert ?? {}
+  const lastAlert        = heatmapData?.lastAlert ?? {}
+  const lastAlertDate    = Object.values(lastAlert).reduce((max, d) => d > max ? d : max, '') || null
 
   // Primary: count desc, secondary: last alert date desc (most recent first)
   const sortedDesc = [...allCities].sort((a, b) => {
@@ -128,6 +134,11 @@ export default function StatsPanel({ heatmapData, storedCount, onClearHistory, l
                 {total}
                 <span className="text-sm text-slate-400 mr-1">התראות</span>
               </div>
+              {lastAlertDate && (
+                <div className="text-xs text-slate-400 mt-0.5">
+                  התראה אחרונה: <span className="text-slate-300">{formatDateTime(lastAlertDate)}</span>
+                </div>
+              )}
             </div>
           </div>
 

@@ -125,7 +125,7 @@ export default function App() {
     filters.to?.toDateString()   !== defaultTo().toDateString()
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden font-hebrew bg-slate-900" dir="rtl">
+    <div className="flex w-screen overflow-hidden font-hebrew bg-slate-900" style={{height:'100dvh'}} dir="rtl">
 
       {visibleAlerts.length > 0 && (
         <AlertBanner alerts={visibleAlerts} onDismiss={() => setDismissedId(visibleAlerts[0]?.id)} />
@@ -278,6 +278,13 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* Mobile version number */}
+      <span
+        className="md:hidden fixed text-[10px] text-slate-600 select-none cursor-default z-20"
+        style={{ bottom: 'calc(0.5rem + env(safe-area-inset-bottom))', left: '0.75rem' }}
+        onClick={handleVersionTap}
+      >v{VERSION}</span>
 
       <DebugPanel shown={debugShown} />
 

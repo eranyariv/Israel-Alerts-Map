@@ -27,7 +27,7 @@ function LocateControl() {
   }
 
   return (
-    <div className="leaflet-bottom leaflet-left" style={{ marginBottom: '12px', marginLeft: '12px' }}>
+    <div className="leaflet-bottom leaflet-right" style={{ marginBottom: '30px', marginRight: '12px' }}>
       <div className="leaflet-control leaflet-bar" style={{ border: 'none' }}>
         <button
           onClick={handleLocate}
