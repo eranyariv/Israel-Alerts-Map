@@ -16,14 +16,22 @@ const BTN_STYLE = {
 
 function MapControls() {
   const map = useMap()
-  const [locating, setLocating] = useState(false)
+  const [locating,   setLocating]   = useState(false)
+  const [atDefault,  setAtDefault]  = useState(true)
 
   useEffect(() => {
     const onFound = () => setLocating(false)
     const onError = () => setLocating(false)
+    const onMove  = () => {
+      const c = map.getCenter()
+      const z = map.getZoom()
+      const sameCenter = Math.abs(c.lat - ISRAEL_CENTER[0]) < 0.01 && Math.abs(c.lng - ISRAEL_CENTER[1]) < 0.01
+      setAtDefault(sameCenter && z === DEFAULT_ZOOM)
+    }
     map.on('locationfound', onFound)
     map.on('locationerror', onError)
-    return () => { map.off('locationfound', onFound); map.off('locationerror', onError) }
+    map.on('moveend', onMove)
+    return () => { map.off('locationfound', onFound); map.off('locationerror', onError); map.off('moveend', onMove) }
   }, [map])
 
   const handleLocate = (e) => {
@@ -34,13 +42,19 @@ function MapControls() {
 
   const handleReset = (e) => {
     e.preventDefault()
+    setAtDefault(true)
     map.flyTo(ISRAEL_CENTER, DEFAULT_ZOOM, { duration: 1.2 })
   }
 
   return (
     <div className="leaflet-bottom leaflet-right" style={{ marginBottom: '30px', marginRight: '12px' }}>
       <div className="leaflet-control" style={{ border: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <button onClick={handleReset} title="חזרה לתצוגת ישראל" style={BTN_STYLE}>
+        <button
+          onClick={handleReset}
+          title="חזרה לתצוגת ישראל"
+          disabled={atDefault}
+          style={{ ...BTN_STYLE, cursor: atDefault ? 'default' : 'pointer', opacity: atDefault ? 0.35 : 1, transition: 'opacity 0.2s' }}
+        >
           <Maximize2 size={17} style={{ color: '#cbd5e1' }} />
         </button>
         <button onClick={handleLocate} title="מיקום נוכחי" style={BTN_STYLE}>
