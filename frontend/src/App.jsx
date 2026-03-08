@@ -64,9 +64,11 @@ export default function App() {
   const [debugShown,      setDebugShown]      = useState(false)
   const [settingsOpen,    setSettingsOpen]    = useState(false)
   const [mapType,         setMapType]         = useState(() => localStorage.getItem('mapType') || DEFAULT_MAP_TYPE)
+  const [alertsSource,    setAlertsSource]    = useState(() => localStorage.getItem('alertsSource') || 'oref')
+  const [redalertApiKey,  setRedalertApiKey]  = useState(() => localStorage.getItem('redalertApiKey') || '')
   const debugTapRef = useRef({ count: 0, timer: null })
 
-  const { currentAlerts, heatmapData, storedCount, loading, error, lastRefresh, refresh, refreshLive, wipeHistory, connectWebSocket, disconnectWebSocket } = useAlerts()
+  const { currentAlerts, heatmapData, storedCount, loading, error, lastRefresh, refresh, refreshLive, wipeHistory, connectWebSocket, disconnectWebSocket } = useAlerts({ source: alertsSource, redalertApiKey })
 
   // Toggle debug with backtick key (works on desktop + physical keyboards on mobile)
   useEffect(() => {
@@ -311,6 +313,10 @@ export default function App() {
         onClose={() => setSettingsOpen(false)}
         mapType={mapType}
         onMapTypeChange={(t) => { setMapType(t); localStorage.setItem('mapType', t) }}
+        alertsSource={alertsSource}
+        onAlertsSourceChange={(s) => { setAlertsSource(s); localStorage.setItem('alertsSource', s) }}
+        redalertApiKey={redalertApiKey}
+        onRedalertApiKeyChange={(k) => { setRedalertApiKey(k); localStorage.setItem('redalertApiKey', k) }}
       />
 
       {/* Mobile Bottom Sheet */}

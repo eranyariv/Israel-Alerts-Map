@@ -1,13 +1,13 @@
 import { useEffect } from 'react'
-import { X, Mail, ChevronLeft } from 'lucide-react'
+import { X, Mail, ChevronLeft, ExternalLink } from 'lucide-react'
 import { MAP_TILES } from '../utils/mapTiles'
 import { VERSION } from '../version'
 
 const SITE_URL = 'https://yariv.org/map/'
 
 const ALERT_SOURCES = [
-  { id: 'oref',     label: 'פיקוד העורף',  available: true  },
-  { id: 'redalert', label: 'RedAlert API', available: false },
+  { id: 'oref',     label: 'פיקוד העורף',  desc: 'מקור ברירת מחדל' },
+  { id: 'redalert', label: 'Red Alert API', desc: 'redalert.orielhaim.com' },
 ]
 
 function Section({ title, children }) {
@@ -19,36 +19,34 @@ function Section({ title, children }) {
   )
 }
 
-function OptionRow({ label, selected, disabled, badge, onClick }) {
+function OptionRow({ label, desc, selected, onClick }) {
   return (
     <button
-      onClick={!disabled ? onClick : undefined}
-      disabled={disabled}
+      onClick={onClick}
       className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border transition-colors text-sm
         ${selected
           ? 'bg-blue-600/20 border-blue-500/60 text-white'
-          : disabled
-            ? 'bg-slate-700/20 border-slate-700/40 text-slate-500 cursor-not-allowed'
-            : 'bg-slate-700/30 border-slate-700/50 text-slate-300 hover:bg-slate-700/60 hover:text-white'
+          : 'bg-slate-700/30 border-slate-700/50 text-slate-300 hover:bg-slate-700/60 hover:text-white'
         }`}
     >
-      <span>{label}</span>
-      <div className="flex items-center gap-2">
-        {badge && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-600 text-slate-400 font-medium">
-            {badge}
-          </span>
-        )}
-        <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0
-          ${selected ? 'border-blue-400' : 'border-slate-500'}`}>
-          {selected && <div className="w-2 h-2 rounded-full bg-blue-400" />}
-        </div>
+      <div className="text-right">
+        <div>{label}</div>
+        {desc && <div className="text-xs text-slate-500 mt-0.5">{desc}</div>}
+      </div>
+      <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 mr-2
+        ${selected ? 'border-blue-400' : 'border-slate-500'}`}>
+        {selected && <div className="w-2 h-2 rounded-full bg-blue-400" />}
       </div>
     </button>
   )
 }
 
-export default function SettingsPanel({ isOpen, onClose, mapType, onMapTypeChange }) {
+export default function SettingsPanel({
+  isOpen, onClose,
+  mapType, onMapTypeChange,
+  alertsSource, onAlertsSourceChange,
+  redalertApiKey, onRedalertApiKeyChange,
+}) {
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', handler)
@@ -61,10 +59,8 @@ export default function SettingsPanel({ isOpen, onClose, mapType, onMapTypeChang
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
-      {/* Panel */}
       <div className="relative bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl w-[min(380px,calc(100vw-2rem))] max-h-[calc(100dvh-4rem)] flex flex-col" dir="rtl">
 
         {/* Header */}
@@ -81,12 +77,7 @@ export default function SettingsPanel({ isOpen, onClose, mapType, onMapTypeChang
           {/* Map type */}
           <Section title="סוג מפה">
             {Object.entries(MAP_TILES).map(([id, tile]) => (
-              <OptionRow
-                key={id}
-                label={tile.label}
-                selected={mapType === id}
-                onClick={() => onMapTypeChange(id)}
-              />
+              <OptionRow key={id} label={tile.label} selected={mapType === id} onClick={() => onMapTypeChange(id)} />
             ))}
           </Section>
 
@@ -96,11 +87,37 @@ export default function SettingsPanel({ isOpen, onClose, mapType, onMapTypeChang
               <OptionRow
                 key={src.id}
                 label={src.label}
-                selected={src.id === 'oref'}
-                disabled={!src.available}
-                badge={!src.available ? 'בקרוב' : null}
+                desc={src.desc}
+                selected={alertsSource === src.id}
+                onClick={() => onAlertsSourceChange(src.id)}
               />
             ))}
+
+            {/* RedAlert API key input — shown when redalert is selected */}
+            {alertsSource === 'redalert' && (
+              <div className="space-y-1.5 pt-1">
+                <label className="text-xs text-slate-400 block">מפתח API</label>
+                <input
+                  type="text"
+                  value={redalertApiKey}
+                  onChange={e => onRedalertApiKeyChange(e.target.value)}
+                  placeholder="הכנס מפתח API..."
+                  className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm
+                             text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+                  dir="ltr"
+                  spellCheck={false}
+                />
+                <a
+                  href="https://redalert.orielhaim.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                >
+                  <ExternalLink size={11} />
+                  קבל מפתח API
+                </a>
+              </div>
+            )}
           </Section>
 
           {/* Feedback */}

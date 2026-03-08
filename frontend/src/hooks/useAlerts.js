@@ -1,22 +1,19 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
+import { io } from 'socket.io-client'
 import { loadHistory, saveAlerts, clearHistory, historyCount } from '../utils/localHistory'
 import * as log from '../utils/logger'
 
 // ── Tzevaadom (live alerts — WebSocket + REST snapshot) ───────────────────
-// Uses tzevaadom.co.il which has CORS-enabled endpoints and a public WebSocket,
-// bypassing the Akamai IP block that prevents direct access to oref.org.il.
 
-const TZ_WS           = 'wss://ws.tzevaadom.co.il:8443/socket?platform=WEB'
+const TZ_WS            = 'wss://ws.tzevaadom.co.il:8443/socket?platform=WEB'
 const TZ_NOTIFICATIONS = '/tzevaadom/notifications'
 const TZ_VERSIONS_URL  = '/tzevaadom/lists-versions'
 const TZ_CITIES_URL    = v => `/tzevaadom-static/static/cities.json?v=${v}`
 const TZ_WS_MAX_RETRIES = 3
 
-// Oref/tzevaadom threat number → our category number
 const THREAT_TO_CAT = { 0: 1, 1: 1, 2: 3, 3: 4, 5: 2 }
 const CAT_TITLES    = { 1: 'ירי רקטות וטילים', 2: 'חדירת כלי טיס עויין', 3: 'חדירת מחבלים', 4: 'רעידת אדמה' }
 
-// Module-level city lookup cache: tzevaadom value ID → Hebrew city name
 let _cityLookup = null
 let _cityLookupPromise = null
 
@@ -38,7 +35,7 @@ async function getCityLookup() {
         return lookup
       } catch (e) {
         log.warn('[tzevaadom] city lookup failed, will retry on next alert', e.message)
-        _cityLookupPromise = null  // reset so next call retries
+        _cityLookupPromise = null
         _cityLookup = {}
         return {}
       }
@@ -68,6 +65,24 @@ async function fetchTzevaadomSnapshot() {
   const alerts = data.map(n => parseTzevaadomItem(n, lookup)).filter(Boolean)
   if (alerts.length) log.success('[fetch] tzevaadom → active alerts', alerts)
   return alerts
+}
+
+// ── RedAlert (Socket.IO) ──────────────────────────────────────────────────
+
+const RA_URL = 'https://redalert.orielhaim.com'
+
+const RA_TYPE_TO_CAT = {
+  missiles: 1, missile: 1, rockets: 1,
+  hostileAircraftIntrusion: 2, uav: 2, UAV: 2, drone: 2,
+  infiltration: 3, terroristInfiltration: 3,
+  earthQuake: 4, earthquake: 4,
+}
+
+function parseRedAlertItem(ra) {
+  const cat    = RA_TYPE_TO_CAT[ra.type] ?? 1
+  const cities = Array.isArray(ra.cities) ? ra.cities.filter(Boolean) : []
+  if (!cities.length) return null
+  return { id: `ra-${ra.type}`, cat, title: ra.title || CAT_TITLES[cat] || 'התראה', cities }
 }
 
 // ── History ────────────────────────────────────────────────────────────────
@@ -113,7 +128,7 @@ function buildHeatmap(history) {
 
 // ── Hook ───────────────────────────────────────────────────────────────────
 
-export function useAlerts() {
+export function useAlerts({ source = 'oref', redalertApiKey = '' } = {}) {
   const [currentAlerts, setCurrentAlerts] = useState([])
   const [heatmapData,   setHeatmapData]   = useState({ cities: [], max_count: 0, total: 0, by_cat: {} })
   const [loading,       setLoading]       = useState(false)
@@ -121,23 +136,25 @@ export function useAlerts() {
   const [lastRefresh,   setLastRefresh]   = useState(null)
   const [storedCount,   setStoredCount]   = useState(historyCount)
 
-  const wsRef          = useRef(null)
-  const reconnectRef   = useRef(null)
-  const wsEnabledRef   = useRef(false)
-  const wsRetriesRef   = useRef(0)
-  const pollRef        = useRef(null)
+  // Tzevaadom refs
+  const wsRef        = useRef(null)
+  const reconnectRef = useRef(null)
+  const wsEnabledRef = useRef(false)
+  const wsRetriesRef = useRef(0)
 
-  // Preload city lookup in the background
+  // RedAlert refs
+  const raSocketRef  = useRef(null)
+  const raEnabledRef = useRef(false)
+
   useEffect(() => { getCityLookup() }, [])
 
-  // ── WebSocket (live mode) ────────────────────────────────────────────────
+  // ── Tzevaadom ─────────────────────────────────────────────────────────────
 
-  const connectWebSocket = useCallback(() => {
-    if (!wsEnabledRef.current) wsRetriesRef.current = 0  // reset on fresh activation
+  const connectTzevaadom = useCallback(() => {
+    if (!wsEnabledRef.current) wsRetriesRef.current = 0
     wsEnabledRef.current = true
     clearTimeout(reconnectRef.current)
 
-    // Don't open a second socket if one is already connecting/open
     if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) return
 
     log.info('[ws] connecting to tzevaadom...')
@@ -156,7 +173,6 @@ export function useAlerts() {
           const alert  = parseTzevaadomItem(msg.data ?? {}, lookup)
           if (alert) {
             saveAlerts([alert])
-            // Merge into existing alerts — don't replace (multiple simultaneous alerts)
             setCurrentAlerts(prev => {
               const without = prev.filter(a => a.id !== alert.id)
               return [...without, alert]
@@ -164,8 +180,6 @@ export function useAlerts() {
             setStoredCount(historyCount())
           }
         } else {
-          // EXIT, ALL_CLEAR, SYSTEM_MESSAGE — one alert ended.
-          // Refresh from REST to get authoritative state rather than blindly clearing all.
           log.info('[ws] alert ended — refreshing live state from REST')
           fetchTzevaadomSnapshot()
             .then(alerts => { setCurrentAlerts(alerts); setLastRefresh(new Date()) })
@@ -186,7 +200,7 @@ export function useAlerts() {
         wsRetriesRef.current += 1
         if (wsRetriesRef.current <= TZ_WS_MAX_RETRIES) {
           log.info(`[ws] reconnecting in 5s... (attempt ${wsRetriesRef.current}/${TZ_WS_MAX_RETRIES})`)
-          reconnectRef.current = setTimeout(connectWebSocket, 5000)
+          reconnectRef.current = setTimeout(connectTzevaadom, 5000)
         } else {
           log.warn('[ws] max retries reached — WebSocket unavailable, relying on REST polling')
         }
@@ -194,24 +208,86 @@ export function useAlerts() {
     }
   }, [])
 
-  const disconnectWebSocket = useCallback(() => {
+  const disconnectTzevaadom = useCallback(() => {
     wsEnabledRef.current = false
     wsRetriesRef.current = 0
     clearTimeout(reconnectRef.current)
-    clearInterval(pollRef.current)
-    pollRef.current = null
     const ws = wsRef.current
     wsRef.current = null
-    if (ws) {
-      ws.onclose = null   // prevent reconnect loop
-      ws.close()
-      log.info('[ws] disconnected')
-    }
+    if (ws) { ws.onclose = null; ws.close(); log.info('[ws] disconnected') }
   }, [])
 
-  // ── Snapshot (one-shot REST fetch for initial live state) ────────────────
+  // ── RedAlert ─────────────────────────────────────────────────────────────
+
+  const connectRedAlert = useCallback(() => {
+    raEnabledRef.current = true
+    if (raSocketRef.current?.connected) return
+
+    log.info('[redalert] connecting...')
+    const socket = io(RA_URL, {
+      auth: { apiKey: redalertApiKey },
+      transports: ['websocket'],
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 5000,
+    })
+    raSocketRef.current = socket
+
+    socket.on('connect', () => {
+      log.success('[redalert] connected')
+      setLastRefresh(new Date())
+    })
+
+    socket.on('alert', (alerts) => {
+      log.info('[redalert] alert event', alerts)
+      const parsed = (Array.isArray(alerts) ? alerts : [alerts]).map(parseRedAlertItem).filter(Boolean)
+      if (parsed.length) {
+        saveAlerts(parsed)
+        setCurrentAlerts(parsed)
+        setStoredCount(historyCount())
+      }
+      setLastRefresh(new Date())
+    })
+
+    socket.on('endAlert', (alert) => {
+      log.info('[redalert] endAlert event', alert)
+      const type = alert?.type
+      setCurrentAlerts(prev => type ? prev.filter(a => a.id !== `ra-${type}`) : [])
+      setLastRefresh(new Date())
+    })
+
+    socket.on('disconnect', (reason) => log.warn('[redalert] disconnected:', reason))
+    socket.on('connect_error', (err) => log.error('[redalert] connection error:', err.message))
+  }, [redalertApiKey])
+
+  const disconnectRedAlert = useCallback(() => {
+    raEnabledRef.current = false
+    const s = raSocketRef.current
+    raSocketRef.current = null
+    if (s) { s.disconnect(); log.info('[redalert] disconnected') }
+  }, [])
+
+  // ── Unified connect / disconnect ─────────────────────────────────────────
+
+  const connectWebSocket = useCallback(() => {
+    if (source === 'redalert') {
+      disconnectTzevaadom()
+      connectRedAlert()
+    } else {
+      disconnectRedAlert()
+      connectTzevaadom()
+    }
+  }, [source, connectTzevaadom, disconnectTzevaadom, connectRedAlert, disconnectRedAlert])
+
+  const disconnectWebSocket = useCallback(() => {
+    disconnectTzevaadom()
+    disconnectRedAlert()
+  }, [disconnectTzevaadom, disconnectRedAlert])
+
+  // ── Snapshot (tzevaadom only; RedAlert is push-only) ─────────────────────
 
   const refreshLive = useCallback(async () => {
+    if (source === 'redalert') return   // push-only — nothing to poll
     try {
       const alerts = await fetchTzevaadomSnapshot()
       if (alerts.length) saveAlerts(alerts)
@@ -221,9 +297,9 @@ export function useAlerts() {
     } catch (e) {
       log.warn('[refreshLive] snapshot failed', e.message)
     }
-  }, [])
+  }, [source])
 
-  // ── Full history refresh ─────────────────────────────────────────────────
+  // ── Full history refresh ──────────────────────────────────────────────────
 
   const refresh = useCallback(async ({ categories = [], from = null, to = null } = {}) => {
     setLoading(true)
