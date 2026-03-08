@@ -69,7 +69,8 @@ async function fetchTzevaadomSnapshot() {
 
 // ── RedAlert (Socket.IO) ──────────────────────────────────────────────────
 
-const RA_URL = 'https://redalert.orielhaim.com'
+const RA_URL    = 'https://redalert.orielhaim.com'
+const RA_APIKEY = 'CqfarpQQEpiQrskKallxRXJKnbuGUywXeVgafWGkTCWbaAGsJzeltxtzuMNrjFVo'
 
 const RA_TYPE_TO_CAT = {
   missiles: 1, missile: 1, rockets: 1,
@@ -128,7 +129,7 @@ function buildHeatmap(history) {
 
 // ── Hook ───────────────────────────────────────────────────────────────────
 
-export function useAlerts({ source = 'oref', redalertApiKey = '' } = {}) {
+export function useAlerts({ source = 'oref' } = {}) {
   const [currentAlerts, setCurrentAlerts] = useState([])
   const [heatmapData,   setHeatmapData]   = useState({ cities: [], max_count: 0, total: 0, by_cat: {} })
   const [loading,       setLoading]       = useState(false)
@@ -225,7 +226,7 @@ export function useAlerts({ source = 'oref', redalertApiKey = '' } = {}) {
 
     log.info('[redalert] connecting...')
     const socket = io(RA_URL, {
-      auth: { apiKey: redalertApiKey },
+      auth: { apiKey: RA_APIKEY },
       transports: ['websocket'],
       reconnection: true,
       reconnectionAttempts: 5,

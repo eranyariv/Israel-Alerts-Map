@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { X, Mail, ChevronLeft, ExternalLink } from 'lucide-react'
+import { X, Mail, ChevronLeft } from 'lucide-react'
 import { MAP_TILES } from '../utils/mapTiles'
 import { VERSION } from '../version'
 
@@ -45,7 +45,6 @@ export default function SettingsPanel({
   isOpen, onClose,
   mapType, onMapTypeChange,
   alertsSource, onAlertsSourceChange,
-  redalertApiKey, onRedalertApiKeyChange,
 }) {
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose() }
@@ -93,31 +92,6 @@ export default function SettingsPanel({
               />
             ))}
 
-            {/* RedAlert API key input — shown when redalert is selected */}
-            {alertsSource === 'redalert' && (
-              <div className="space-y-1.5 pt-1">
-                <label className="text-xs text-slate-400 block">מפתח API</label>
-                <input
-                  type="text"
-                  value={redalertApiKey}
-                  onChange={e => onRedalertApiKeyChange(e.target.value)}
-                  placeholder="הכנס מפתח API..."
-                  className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm
-                             text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
-                  dir="ltr"
-                  spellCheck={false}
-                />
-                <a
-                  href="https://redalert.orielhaim.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
-                >
-                  <ExternalLink size={11} />
-                  קבל מפתח API
-                </a>
-              </div>
-            )}
           </Section>
 
           {/* Feedback */}
