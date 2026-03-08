@@ -80,7 +80,8 @@ const RA_TYPE_TO_CAT = {
 }
 
 function parseRedAlertItem(ra) {
-  const cat    = RA_TYPE_TO_CAT[ra.type] ?? 1
+  const cat = RA_TYPE_TO_CAT[ra.type]
+  if (!cat) return null  // skip newsFlash, endAlert, unknown types
   const cities = Array.isArray(ra.cities) ? ra.cities.filter(Boolean) : []
   if (!cities.length) return null
   return { id: `ra-${ra.type}`, cat, title: ra.title || CAT_TITLES[cat] || 'התראה', cities }
@@ -89,6 +90,68 @@ function parseRedAlertItem(ra) {
 // ── History ────────────────────────────────────────────────────────────────
 
 const CAT_NORMALIZE = { 10: 1, 11: 2, 12: 3 }
+
+// In dev: Vite proxy /redalert-api/ → redalert.orielhaim.com (injects auth header)
+// In prod: PHP proxy ra-proxy.php?_path=... (same-origin, no CORS issue)
+const IS_DEV = import.meta.env.DEV
+
+async function raFetch(path, params = {}) {
+  let url
+  if (IS_DEV) {
+    url = new URL(`/redalert-api${path}`, window.location.origin)
+    Object.entries(params).forEach(([k, v]) => v != null && url.searchParams.set(k, String(v)))
+  } else {
+    url = new URL(`${import.meta.env.BASE_URL}ra-proxy.php`, window.location.origin)
+    url.searchParams.set('_path', path)
+    Object.entries(params).forEach(([k, v]) => v != null && url.searchParams.set(k, String(v)))
+  }
+  log.info(`[redalert] GET ${path}`, params)
+  const res = await fetch(url.toString(), { cache: 'no-store' })
+  if (!res.ok) throw new Error(`HTTP ${res.status} for ${path}`)
+  return res.json()
+}
+
+async function fetchRedAlertHeatmap(from, to) {
+  const dateParams = {}
+  if (from) dateParams.startDate = from.toISOString()
+  if (to)   { const end = new Date(to); end.setHours(23, 59, 59, 999); dateParams.endDate = end.toISOString() }
+
+  // Fetch cities, distribution, and summary in parallel
+  const [distJson, citiesJson, summaryJson] = await Promise.all([
+    raFetch('/api/stats/distribution', { ...dateParams, limit: 100 }),
+    raFetch('/api/stats/cities',       { ...dateParams, limit: 500, sort: 'count', order: 'desc' }),
+    raFetch('/api/stats/summary',      { ...dateParams }),
+  ])
+
+  // Paginate cities if needed (unlikely — >500 distinct cities is rare)
+  let allCityRows = citiesJson?.data ?? []
+  let pag = citiesJson?.pagination
+  while (pag?.hasMore) {
+    const next = await raFetch('/api/stats/cities', { ...dateParams, limit: 500, sort: 'count', order: 'desc', offset: allCityRows.length })
+    allCityRows = [...allCityRows, ...(next?.data ?? [])]
+    pag = next?.pagination
+  }
+
+  // Build counts map and sorted cities array
+  const counts   = {}
+  for (const c of allCityRows) counts[c.city] = c.count
+  const maxCount = allCityRows[0]?.count ?? 1
+  const cities   = allCityRows.map(c => ({ city: c.city, count: c.count }))
+
+  // Build by_cat from distribution (string type → numeric cat)
+  // Skip newsFlash, endAlert, and any unknown types — only count real alert categories
+  const by_cat = {}
+  for (const d of distJson?.data ?? []) {
+    const cat = RA_TYPE_TO_CAT[d.category]
+    if (!cat) continue
+    by_cat[cat] = (by_cat[cat] ?? 0) + d.count
+  }
+  const total = Object.values(by_cat).reduce((s, c) => s + c, 0)
+
+  log.success(`[redalert] heatmap: ${cities.length} cities, total=${total}`, { by_cat, top5: cities.slice(0, 5) })
+  // lastAlert and byCity not available from aggregated API — map tooltips show count only
+  return { cities, counts, lastAlert: {}, max_count: maxCount, total, by_cat, byCity: {} }
+}
 
 async function fetchStaticHistory() {
   const url = `${import.meta.env.BASE_URL}alertHistory.json`
@@ -259,7 +322,7 @@ export function useAlerts({ source = 'oref' } = {}) {
 
     socket.on('disconnect', (reason) => log.warn('[redalert] disconnected:', reason))
     socket.on('connect_error', (err) => log.error('[redalert] connection error:', err.message))
-  }, [redalertApiKey])
+  }, [])
 
   const disconnectRedAlert = useCallback(() => {
     raEnabledRef.current = false
@@ -305,41 +368,49 @@ export function useAlerts({ source = 'oref' } = {}) {
   const refresh = useCallback(async ({ categories = [], from = null, to = null } = {}) => {
     setLoading(true)
     setError(null)
-    log.info('──── refresh started ────', { categories, from: from?.toISOString(), to: to?.toISOString() })
+    log.info('──── refresh started ────', { source, categories, from: from?.toISOString(), to: to?.toISOString() })
 
     try {
-      const staticRaw = await fetchStaticHistory().catch(e => { log.error('[fetch] static archive threw', e.message); return null })
+      let history = []
 
-      let baseAlerts = []
-      if (staticRaw?.length) {
-        baseAlerts = staticRaw.map(a => ({ ...a, cat: CAT_NORMALIZE[a.cat] ?? a.cat }))
-        log.info(`[history] static archive: ${baseAlerts.length} alerts`)
+      if (source === 'redalert') {
+        // RedAlert: use pre-aggregated stats APIs (fast — 2 requests total)
+        const heatmap = await fetchRedAlertHeatmap(from, to)
+        setHeatmapData(heatmap)
+      } else {
+        // Static archive + localStorage — build heatmap locally
+        const staticRaw = await fetchStaticHistory().catch(e => { log.error('[fetch] static archive threw', e.message); return null })
+
+        let baseAlerts = []
+        if (staticRaw?.length) {
+          baseAlerts = staticRaw.map(a => ({ ...a, cat: CAT_NORMALIZE[a.cat] ?? a.cat }))
+          log.info(`[history] static archive: ${baseAlerts.length} alerts`)
+        }
+
+        const local = loadHistory().map(a => ({ ...a, cat: CAT_NORMALIZE[a.cat] ?? a.cat }))
+        const localIds    = new Set(local.map(a => a.id))
+        const archiveOnly = baseAlerts.filter(a => !localIds.has(a.id))
+        let history = [...local, ...archiveOnly]
+        log.info(`[history] merged: ${local.length} local + ${archiveOnly.length} archive = ${history.length}`)
+
+        if (categories.length > 0) {
+          const before = history.length
+          history = history.filter(a => categories.includes(a.cat))
+          log.info(`[filter] category: ${before} → ${history.length}`)
+        }
+        if (from || to) {
+          const before = history.length
+          history = history.filter(a => {
+            const ts = new Date(a.savedAt || a.timestamp || 0)
+            if (from && ts < from) return false
+            if (to) { const end = new Date(to); end.setHours(23, 59, 59, 999); if (ts > end) return false }
+            return true
+          })
+          log.info(`[filter] date: ${before} → ${history.length}`)
+        }
+
+        setHeatmapData(buildHeatmap(history))
       }
-
-      const local = loadHistory().map(a => ({ ...a, cat: CAT_NORMALIZE[a.cat] ?? a.cat }))
-
-      const localIds    = new Set(local.map(a => a.id))
-      const archiveOnly = baseAlerts.filter(a => !localIds.has(a.id))
-      let history = [...local, ...archiveOnly]
-      log.info(`[history] merged: ${local.length} local + ${archiveOnly.length} archive = ${history.length}`)
-
-      if (categories.length > 0) {
-        const before = history.length
-        history = history.filter(a => categories.includes(a.cat))
-        log.info(`[filter] category: ${before} → ${history.length}`)
-      }
-      if (from || to) {
-        const before = history.length
-        history = history.filter(a => {
-          const ts = new Date(a.savedAt || a.timestamp || 0)
-          if (from && ts < from) return false
-          if (to) { const end = new Date(to); end.setHours(23, 59, 59, 999); if (ts > end) return false }
-          return true
-        })
-        log.info(`[filter] date: ${before} → ${history.length}`)
-      }
-
-      setHeatmapData(buildHeatmap(history))
       setStoredCount(historyCount())
       setLastRefresh(new Date())
       log.success('──── refresh complete ────')
@@ -349,7 +420,7 @@ export function useAlerts({ source = 'oref' } = {}) {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [source])
 
   const wipeHistory = useCallback(() => {
     clearHistory()
