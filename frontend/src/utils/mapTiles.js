@@ -19,6 +19,18 @@ export const MAP_TILES = {
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     attribution: 'Tiles &copy; Esri &mdash; Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP',
   },
+  googleRoad: {
+    label: 'Google Maps',
+    url: 'https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+    attribution: '&copy; Google',
+    subdomains: '0123',
+  },
+  googleSatellite: {
+    label: 'Google לוויין',
+    url: 'https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+    attribution: '&copy; Google',
+    subdomains: '0123',
+  },
 }
 
 export const DEFAULT_MAP_TYPE = 'osm'

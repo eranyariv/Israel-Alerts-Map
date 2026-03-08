@@ -244,6 +244,7 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
         key={mapType}
         attribution={MAP_TILES[mapType]?.attribution}
         url={MAP_TILES[mapType]?.url}
+        subdomains={MAP_TILES[mapType]?.subdomains ?? 'abc'}
       />
 
       <MapControls />
