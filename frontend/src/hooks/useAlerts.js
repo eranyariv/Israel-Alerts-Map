@@ -70,7 +70,7 @@ async function fetchTzevaadomSnapshot() {
 // ── RedAlert (Socket.IO) ──────────────────────────────────────────────────
 
 const RA_URL    = 'https://redalert.orielhaim.com'
-const RA_APIKEY = 'CqfarpQQEpiQrskKallxRXJKnbuGUywXeVgafWGkTCWbaAGsJzeltxtzuMNrjFVo'
+const RA_APIKEY = import.meta.env.VITE_RA_APIKEY
 
 const RA_TYPE_TO_CAT = {
   missiles: 1, missile: 1, rockets: 1,
