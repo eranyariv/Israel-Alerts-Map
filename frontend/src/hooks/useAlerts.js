@@ -105,10 +105,35 @@ async function raFetch(path, params = {}) {
     url.searchParams.set('_path', path)
     Object.entries(params).forEach(([k, v]) => v != null && url.searchParams.set(k, String(v)))
   }
-  log.info(`[redalert] GET ${path}`, params)
   const res = await fetch(url.toString(), { cache: 'no-store' })
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${path}`)
   return res.json()
+}
+
+// The 4 real alert categories in the RedAlert API
+const RA_HISTORY_CATEGORIES = ['missiles', 'hostileAircraftIntrusion', 'terroristInfiltration', 'earthQuake']
+
+async function fetchRedAlertCategoryHistory(category, dateParams) {
+  const cat    = RA_TYPE_TO_CAT[category]
+  const alerts = []
+  let offset   = 0
+  let hasMore  = true
+  while (hasMore) {
+    const json = await raFetch('/api/stats/history', { ...dateParams, category, limit: 100, offset })
+    for (const item of json.data ?? []) {
+      alerts.push({
+        id: String(item.id),
+        cat,
+        title: CAT_TITLES[cat] ?? 'התראה',
+        cities: (item.cities ?? []).map(c => c.name).filter(Boolean),
+        savedAt: item.timestamp,
+      })
+    }
+    hasMore = json.pagination?.hasMore ?? false
+    offset += json.pagination?.limit ?? 100
+  }
+  log.info(`[redalert] history ${category}: ${alerts.length} alerts`)
+  return alerts
 }
 
 async function fetchRedAlertHeatmap(from, to) {
@@ -116,41 +141,46 @@ async function fetchRedAlertHeatmap(from, to) {
   if (from) dateParams.startDate = from.toISOString()
   if (to)   { const end = new Date(to); end.setHours(23, 59, 59, 999); dateParams.endDate = end.toISOString() }
 
-  // Fetch cities, distribution, and summary in parallel
-  const [distJson, citiesJson, summaryJson] = await Promise.all([
-    raFetch('/api/stats/distribution', { ...dateParams, limit: 100 }),
-    raFetch('/api/stats/cities',       { ...dateParams, limit: 500, sort: 'count', order: 'desc' }),
-    raFetch('/api/stats/summary',      { ...dateParams }),
-  ])
+  // Fetch all 4 categories in parallel, each paginated to completion
+  const results = await Promise.all(
+    RA_HISTORY_CATEGORIES.map(cat =>
+      fetchRedAlertCategoryHistory(cat, dateParams).catch(e => {
+        log.warn(`[redalert] history ${cat} failed:`, e.message)
+        return []
+      })
+    )
+  )
+  const allAlerts = results.flat()
 
-  // Paginate cities if needed (unlikely — >500 distinct cities is rare)
-  let allCityRows = citiesJson?.data ?? []
-  let pag = citiesJson?.pagination
-  while (pag?.hasMore) {
-    const next = await raFetch('/api/stats/cities', { ...dateParams, limit: 500, sort: 'count', order: 'desc', offset: allCityRows.length })
-    allCityRows = [...allCityRows, ...(next?.data ?? [])]
-    pag = next?.pagination
+  // RedAlert stores one record per city per alert event, staggered by seconds.
+  // Merge records within a 4-minute window per category into one event.
+  const MERGE_WINDOW_MS = 4 * 60 * 1000
+
+  const byCat = {}
+  for (const alert of allAlerts) {
+    ;(byCat[alert.cat] ??= []).push(alert)
   }
 
-  // Build counts map and sorted cities array
-  const counts   = {}
-  for (const c of allCityRows) counts[c.city] = c.count
-  const maxCount = allCityRows[0]?.count ?? 1
-  const cities   = allCityRows.map(c => ({ city: c.city, count: c.count }))
-
-  // Build by_cat from distribution (string type → numeric cat)
-  // Skip newsFlash, endAlert, and any unknown types — only count real alert categories
-  const by_cat = {}
-  for (const d of distJson?.data ?? []) {
-    const cat = RA_TYPE_TO_CAT[d.category]
-    if (!cat) continue
-    by_cat[cat] = (by_cat[cat] ?? 0) + d.count
+  const merged = []
+  for (const catAlerts of Object.values(byCat)) {
+    catAlerts.sort((a, b) => (a.savedAt || '').localeCompare(b.savedAt || ''))
+    let group = null
+    for (const alert of catAlerts) {
+      const ts = new Date(alert.savedAt).getTime()
+      if (!group || ts - group._lastTs >= MERGE_WINDOW_MS) {
+        group = { ...alert, cities: [...alert.cities], _lastTs: ts }
+        merged.push(group)
+      } else {
+        group._lastTs = Math.max(group._lastTs, ts)
+        for (const city of alert.cities)
+          if (!group.cities.includes(city)) group.cities.push(city)
+      }
+    }
   }
-  const total = Object.values(by_cat).reduce((s, c) => s + c, 0)
+  merged.forEach(a => delete a._lastTs)
 
-  log.success(`[redalert] heatmap: ${cities.length} cities, total=${total}`, { by_cat, top5: cities.slice(0, 5) })
-  // lastAlert and byCity not available from aggregated API — map tooltips show count only
-  return { cities, counts, lastAlert: {}, max_count: maxCount, total, by_cat, byCity: {} }
+  log.success(`[redalert] history: ${allAlerts.length} records → ${merged.length} events after 4-min merge`)
+  return buildHeatmap(merged)
 }
 
 async function fetchStaticHistory() {
