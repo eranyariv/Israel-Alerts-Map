@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { RefreshCw, SlidersHorizontal, BarChart2, Shield } from 'lucide-react'
+import { RefreshCw, SlidersHorizontal, BarChart2, Shield, Settings } from 'lucide-react'
 import { formatTime } from './utils/dateFormat'
 
 import Map from './components/Map'
@@ -9,8 +9,10 @@ import LivePanel from './components/LivePanel'
 import AlertBanner from './components/AlertBanner'
 import BottomSheet from './components/BottomSheet'
 import DebugPanel from './components/DebugPanel'
+import SettingsPanel from './components/SettingsPanel'
 import { useAlerts } from './hooks/useAlerts'
 import { VERSION } from './version'
+import { DEFAULT_MAP_TYPE } from './utils/mapTiles'
 
 const HISTORY_TABS = [
   { id: 'stats',   label: 'סטטיסטיקה', Icon: BarChart2 },
@@ -60,6 +62,8 @@ export default function App() {
   const [bottomSheetTab,  setBottomSheetTab]  = useState('stats')
   const [flyToArea,       setFlyToArea]       = useState(null)
   const [debugShown,      setDebugShown]      = useState(false)
+  const [settingsOpen,    setSettingsOpen]    = useState(false)
+  const [mapType,         setMapType]         = useState(DEFAULT_MAP_TYPE)
   const debugTapRef = useRef({ count: 0, timer: null })
 
   const { currentAlerts, heatmapData, storedCount, loading, error, lastRefresh, refresh, refreshLive, wipeHistory, connectWebSocket, disconnectWebSocket } = useAlerts()
@@ -146,6 +150,13 @@ export default function App() {
             </p>
           </div>
           <button
+            onClick={() => setSettingsOpen(true)}
+            className="p-2 rounded-xl bg-slate-700 hover:bg-slate-600 transition-colors touch-manipulation"
+            title="הגדרות"
+          >
+            <Settings size={16} className="text-slate-300" />
+          </button>
+          <button
             onClick={handleRefresh}
             disabled={loading}
             className="p-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50
@@ -205,7 +216,7 @@ export default function App() {
 
       {/* ── Map ─────────────────────────────────────────────────────── */}
       <main className="flex-1 relative" style={{ marginTop: visibleAlerts.length > 0 ? 64 : 0 }}>
-        <Map heatmapData={heatmapData} currentAlerts={currentAlerts} flyToArea={flyToArea} mode={mode} />
+        <Map heatmapData={heatmapData} currentAlerts={currentAlerts} flyToArea={flyToArea} mode={mode} mapType={mapType} />
 
         {/* Mobile top bar */}
         <div className="md:hidden absolute top-3 right-3 left-3 z-20 flex flex-col gap-2">
@@ -219,6 +230,14 @@ export default function App() {
                   : lastRefresh ? `עודכן ${formatTime(lastRefresh)}` : 'מפת התראות ישראל'}
               </span>
             </div>
+            <button
+              onClick={() => setSettingsOpen(true)}
+              className="w-10 h-10 rounded-full bg-slate-800 shadow-lg flex items-center
+                         justify-center border border-slate-700 touch-manipulation shrink-0"
+              title="הגדרות"
+            >
+              <Settings size={16} className="text-slate-300" />
+            </button>
             <button
               onClick={handleRefresh}
               disabled={loading}
@@ -287,6 +306,12 @@ export default function App() {
       >v{VERSION}</span>
 
       <DebugPanel shown={debugShown} />
+      <SettingsPanel
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        mapType={mapType}
+        onMapTypeChange={setMapType}
+      />
 
       {/* Mobile Bottom Sheet */}
       <BottomSheet

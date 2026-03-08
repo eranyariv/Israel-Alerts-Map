@@ -4,6 +4,7 @@ import L from 'leaflet'
 import { Locate, Maximize2 } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
 import { getHeatColor } from '../utils/heatmap'
+import { MAP_TILES, DEFAULT_MAP_TYPE } from '../utils/mapTiles'
 
 const ISRAEL_CENTER = [31.0461, 34.8516]
 const DEFAULT_ZOOM  = 7
@@ -98,7 +99,7 @@ function LiveFlyTo({ currentAlerts }) {
   return null
 }
 
-export default function Map({ heatmapData, currentAlerts, flyToArea, mode }) {
+export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapType = DEFAULT_MAP_TYPE }) {
   const [zones, setZones] = useState(null)
 
   // Load GeoJSON once
@@ -240,8 +241,9 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode }) {
       style={{ background: '#1e2a38' }}
     >
       <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        key={mapType}
+        attribution={MAP_TILES[mapType]?.attribution}
+        url={MAP_TILES[mapType]?.url}
       />
 
       <MapControls />
