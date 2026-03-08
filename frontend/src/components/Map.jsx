@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { MapContainer, TileLayer, GeoJSON, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import { Locate, Maximize2 } from 'lucide-react'
@@ -26,6 +26,7 @@ function MapControls() {
     const onMove  = () => {
       const c = map.getCenter()
       const z = map.getZoom()
+      localStorage.setItem('mapView', JSON.stringify({ center: [c.lat, c.lng], zoom: z }))
       const sameCenter = Math.abs(c.lat - ISRAEL_CENTER[0]) < 0.01 && Math.abs(c.lng - ISRAEL_CENTER[1]) < 0.01
       setAtDefault(sameCenter && z === DEFAULT_ZOOM)
     }
@@ -44,6 +45,7 @@ function MapControls() {
   const handleReset = (e) => {
     e.preventDefault()
     setAtDefault(true)
+    localStorage.setItem('mapView', JSON.stringify({ center: ISRAEL_CENTER, zoom: DEFAULT_ZOOM }))
     map.flyTo(ISRAEL_CENTER, DEFAULT_ZOOM, { duration: 1.2 })
   }
 
@@ -101,6 +103,14 @@ function LiveFlyTo({ currentAlerts }) {
 
 export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapType = DEFAULT_MAP_TYPE }) {
   const [zones, setZones] = useState(null)
+
+  const [initialCenter, initialZoom] = useMemo(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem('mapView'))
+      if (Array.isArray(v?.center) && typeof v.zoom === 'number') return [v.center, v.zoom]
+    } catch {}
+    return [ISRAEL_CENTER, DEFAULT_ZOOM]
+  }, [])
 
   // Load GeoJSON once
   useEffect(() => {
@@ -234,8 +244,8 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
   return (
     <div dir="ltr" className="w-full h-full">
     <MapContainer
-      center={ISRAEL_CENTER}
-      zoom={DEFAULT_ZOOM}
+      center={initialCenter}
+      zoom={initialZoom}
       className="w-full h-full"
       zoomControl={false}
       style={{ background: '#1e2a38' }}

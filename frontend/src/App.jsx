@@ -63,7 +63,7 @@ export default function App() {
   const [flyToArea,       setFlyToArea]       = useState(null)
   const [debugShown,      setDebugShown]      = useState(false)
   const [settingsOpen,    setSettingsOpen]    = useState(false)
-  const [mapType,         setMapType]         = useState(DEFAULT_MAP_TYPE)
+  const [mapType,         setMapType]         = useState(() => localStorage.getItem('mapType') || DEFAULT_MAP_TYPE)
   const debugTapRef = useRef({ count: 0, timer: null })
 
   const { currentAlerts, heatmapData, storedCount, loading, error, lastRefresh, refresh, refreshLive, wipeHistory, connectWebSocket, disconnectWebSocket } = useAlerts()
@@ -310,7 +310,7 @@ export default function App() {
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         mapType={mapType}
-        onMapTypeChange={setMapType}
+        onMapTypeChange={(t) => { setMapType(t); localStorage.setItem('mapType', t) }}
       />
 
       {/* Mobile Bottom Sheet */}
