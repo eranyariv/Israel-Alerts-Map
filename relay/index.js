@@ -33,7 +33,14 @@ socket.on('disconnect', (reason) => {
 })
 
 socket.on('connect_error', (err) => {
-  console.error('[redalert] connection error:', err.message)
+  console.error('[redalert] connection error:', JSON.stringify({
+    message:     err.message,
+    type:        err.type,
+    description: err.description,
+    context:     err.context,
+    code:        err.code ?? err.description?.code,
+    status:      err.description?.status ?? err.description?.statusCode,
+  }))
 })
 
 socket.on('alert', (alerts) => {
