@@ -12,7 +12,7 @@ const TZ_CITIES_URL    = v => `/tzevaadom-static/static/cities.json?v=${v}`
 const TZ_WS_MAX_RETRIES = 3
 
 const THREAT_TO_CAT = { 0: 1, 1: 1, 2: 3, 3: 4, 5: 2 }
-const CAT_TITLES    = { 1: 'ירי רקטות וטילים', 2: 'חדירת כלי טיס עויין', 3: 'חדירת מחבלים', 4: 'רעידת אדמה' }
+const CAT_TITLES    = { 1: 'ירי רקטות וטילים', 2: 'חדירת כלי טיס עויין', 3: 'חדירת מחבלים', 4: 'רעידת אדמה', 5: 'עדכון מידע' }
 
 let _cityLookup = null
 let _cityLookupPromise = null
@@ -77,6 +77,7 @@ const RA_TYPE_TO_CAT = {
   hostileAircraftIntrusion: 2, uav: 2, UAV: 2, drone: 2,
   infiltration: 3, terroristInfiltration: 3,
   earthQuake: 4, earthquake: 4,
+  newsFlash: 5,
 }
 
 function parseRedAlertItem(ra) {
@@ -95,6 +96,10 @@ const CAT_NORMALIZE = { 10: 1, 11: 2, 12: 3 }
 // In prod: PHP proxy ra-proxy.php?_path=... (same-origin, no CORS issue)
 const IS_DEV = import.meta.env.DEV
 
+// 60-second response cache to avoid rate-limit throttling (server returns 401 when exceeded)
+const _raCache = new Map()   // url → { data, expiresAt }
+const RA_CACHE_TTL = 60_000
+
 async function raFetch(path, params = {}) {
   let url
   if (IS_DEV) {
@@ -105,9 +110,17 @@ async function raFetch(path, params = {}) {
     url.searchParams.set('_path', path)
     Object.entries(params).forEach(([k, v]) => v != null && url.searchParams.set(k, String(v)))
   }
+  const key = url.toString()
+  const cached = _raCache.get(key)
+  if (cached && Date.now() < cached.expiresAt) {
+    log.info(`[redalert] cache hit: ${path} offset=${params.offset ?? 0}`)
+    return cached.data
+  }
   const res = await fetch(url.toString(), { cache: 'no-store' })
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${path}`)
-  return res.json()
+  const data = await res.json()
+  _raCache.set(key, { data, expiresAt: Date.now() + RA_CACHE_TTL })
+  return data
 }
 
 // The 4 real alert categories in the RedAlert API
@@ -336,9 +349,15 @@ export function useAlerts({ source = 'oref' } = {}) {
       log.info('[redalert] alert event', alerts)
       const parsed = (Array.isArray(alerts) ? alerts : [alerts]).map(parseRedAlertItem).filter(Boolean)
       if (parsed.length) {
-        saveAlerts(parsed)
-        setCurrentAlerts(parsed)
-        setStoredCount(historyCount())
+        // Save only real alerts (cat 1-4), not newsFlash
+        const toSave = parsed.filter(a => a.cat !== 5)
+        if (toSave.length) { saveAlerts(toSave); setStoredCount(historyCount()) }
+        // Merge into existing currentAlerts by ID (preserves other active alert types)
+        setCurrentAlerts(prev => {
+          const byId = Object.fromEntries(prev.map(a => [a.id, a]))
+          for (const a of parsed) byId[a.id] = a
+          return Object.values(byId)
+        })
       }
       setLastRefresh(new Date())
     })

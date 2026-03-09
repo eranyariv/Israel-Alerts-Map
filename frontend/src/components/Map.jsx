@@ -130,15 +130,18 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
     2: 'חדירת כלי טיס עויין',
     3: 'חדירת מחבלים',
     4: 'רעידת אדמה',
+    5: 'עדכון מידע',
   }
-  const CAT_COLORS = { 1: '#ef4444', 2: '#f97316', 3: '#a855f7', 4: '#06b6d4' }
+  const CAT_COLORS = { 1: '#ef4444', 2: '#f97316', 3: '#a855f7', 4: '#06b6d4', 5: '#eab308' }
 
   // Live mode: set of currently-alerted zone names
   const liveZones    = new Set(currentAlerts.flatMap(a => a.cities ?? []))
-  const liveAlertMap = {}  // city → alert title
+  const liveAlertMap = {}  // city → cat number (for color/label lookup)
   for (const a of currentAlerts)
     for (const city of a.cities ?? [])
-      liveAlertMap[city] = a.title || a.cat
+      // Lower cat number = higher priority (real alert over newsFlash)
+      if (!liveAlertMap[city] || a.cat < liveAlertMap[city])
+        liveAlertMap[city] = a.cat
 
   function fmtDate(iso) {
     if (!iso) return null
@@ -156,11 +159,14 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
   const getStyle = (feature) => {
     const name = feature.properties.name
     if (mode === 'live') {
-      if (liveZones.has(name)) return {
-        fillColor:   '#ef4444',
-        fillOpacity: 0.75,
-        color:       '#ef4444',
-        weight:      2,
+      if (liveZones.has(name)) {
+        const liveColor = CAT_COLORS[liveAlertMap[name]] ?? '#ef4444'
+        return {
+          fillColor:   liveColor,
+          fillOpacity: 0.75,
+          color:       liveColor,
+          weight:      2,
+        }
       }
       return {
         fillColor:   '#1e3a5f',
@@ -189,12 +195,14 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
     const name  = feature.properties.name
     if (mode === 'live') {
       const active = liveZones.has(name)
+      const liveCat   = liveAlertMap[name]
+      const liveColor = CAT_COLORS[liveCat] ?? '#ef4444'
+      const liveLabel = CAT_LABELS[liveCat] ?? 'התראה פעילה'
       layer.bindTooltip(
         `<div dir="rtl" style="font-family:Assistant,sans-serif;min-width:130px">
            <div style="font-weight:700;font-size:14px;margin-bottom:4px">${name}</div>
            ${active
-             ? `<div style="color:#ef4444;font-weight:600;font-size:13px">⚠️ התראה פעילה</div>
-                <div style="color:#94a3b8;font-size:11px;margin-top:2px">${liveAlertMap[name] || ''}</div>`
+             ? `<div style="color:${liveColor};font-weight:600;font-size:13px">⚠️ ${liveLabel}</div>`
              : `<div style="color:#94a3b8;font-size:12px">אין התראות פעילות</div>`}
          </div>`,
         { direction: 'top', sticky: false }

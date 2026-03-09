@@ -18,7 +18,7 @@ $url = $RA_BASE . $path . ($qs ? "?$qs" : '');
 
 $ctx = stream_context_create(['http' => [
     'method'        => 'GET',
-    'header'        => "Authorization: Bearer $APIKEY\r\nAccept: application/json\r\nUser-Agent: yariv.org/1.0",
+    'header'        => "X-API-Key: $APIKEY\r\nAuthorization: Bearer $APIKEY\r\nAccept: application/json\r\nUser-Agent: yariv.org/1.0",
     'ignore_errors' => true,
     'timeout'       => 15,
 ]]);

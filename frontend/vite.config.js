@@ -63,7 +63,7 @@ return {
         changeOrigin: true,
         secure: true,
         rewrite: path => path.replace(/^\/redalert-api/, ''),
-        headers: { 'Authorization': `Bearer ${env.VITE_RA_APIKEY}` },
+        headers: { 'X-API-Key': env.VITE_RA_APIKEY, 'Authorization': `Bearer ${env.VITE_RA_APIKEY}` },
       },
     },
   },
