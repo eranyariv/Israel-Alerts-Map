@@ -330,6 +330,28 @@ export function useAlerts({ source = 'oref' } = {}) {
     raEnabledRef.current = true
     if (raSocketRef.current?.connected) return
 
+    // Seed active alerts from relay (if configured) before socket events arrive
+    const relayUrl = import.meta.env.VITE_RA_RELAY_URL
+    if (relayUrl) {
+      fetch(`${relayUrl}/active`, { cache: 'no-store' })
+        .then(r => r.json())
+        .then(data => {
+          const parsed = (Array.isArray(data) ? data : []).map(parseRedAlertItem).filter(Boolean)
+          if (parsed.length) {
+            log.success(`[relay] seeded ${parsed.length} active alert type(s) from relay`, parsed)
+            setCurrentAlerts(prev => {
+              const byId = Object.fromEntries(prev.map(a => [a.id, a]))
+              for (const a of parsed) byId[a.id] = a
+              return Object.values(byId)
+            })
+            setLastRefresh(new Date())
+          } else {
+            log.info('[relay] no active alerts at startup')
+          }
+        })
+        .catch(e => log.warn('[relay] could not reach relay, falling back to socket-only:', e.message))
+    }
+
     log.info('[redalert] connecting...')
     const socket = io(RA_URL, {
       auth: { apiKey: RA_APIKEY },
