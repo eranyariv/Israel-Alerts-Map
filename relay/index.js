@@ -18,7 +18,7 @@ const activeAlerts = new Map()
 
 const socket = io(RA_URL, {
   auth:                { apiKey: RA_APIKEY },
-  transports:          ['websocket'],
+  transports:          ['polling', 'websocket'],
   reconnection:        true,
   reconnectionAttempts: Infinity,
   reconnectionDelay:   5000,
