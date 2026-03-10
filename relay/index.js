@@ -14,6 +14,18 @@ if (!RA_APIKEY) {
 // Keyed by alert type string (e.g. 'missiles', 'newsFlash')
 const activeAlerts = new Map()
 
+// Chronological log of all alert events seen since startup (max 24h)
+// Each entry: { type, title, cities, startedAt, endedAt }  — endedAt null if still active
+const alertHistory = []
+const HISTORY_TTL_MS = 24 * 60 * 60 * 1000
+
+function pruneHistory() {
+  const cutoff = Date.now() - HISTORY_TTL_MS
+  let i = 0
+  while (i < alertHistory.length && new Date(alertHistory[i].startedAt).getTime() < cutoff) i++
+  if (i > 0) alertHistory.splice(0, i)
+}
+
 // ── Connection state tracking ─────────────────────────────────────────────
 
 const connState = {
@@ -80,13 +92,22 @@ socket.on('alert', (alerts) => {
       for (const city of cities) {
         if (!existing.cities.includes(city)) existing.cities.push(city)
       }
+      // Also merge into the open history entry
+      const histEntry = alertHistory.findLast(e => e.type === a.type && !e.endedAt)
+      if (histEntry) {
+        for (const city of cities)
+          if (!histEntry.cities.includes(city)) histEntry.cities.push(city)
+      }
     } else {
+      const now = new Date().toISOString()
       activeAlerts.set(a.type, {
         type:      a.type,
         title:     a.title || '',
         cities,
-        startedAt: new Date().toISOString(),
+        startedAt: now,
       })
+      pruneHistory()
+      alertHistory.push({ type: a.type, title: a.title || '', cities: [...cities], startedAt: now, endedAt: null })
     }
   }
   console.log('[redalert] alert — active types:', [...activeAlerts.keys()])
@@ -96,6 +117,8 @@ socket.on('endAlert', (alert) => {
   const type = alert?.type
   if (type) {
     activeAlerts.delete(type)
+    const histEntry = alertHistory.findLast(e => e.type === type && !e.endedAt)
+    if (histEntry) histEntry.endedAt = new Date().toISOString()
     console.log('[redalert] endAlert:', type, '— active types:', [...activeAlerts.keys()])
   }
 })
@@ -114,6 +137,12 @@ app.use((req, res, next) => {
 // Returns all currently-active alerts with impacted cities and start time
 app.get('/active', (req, res) => {
   res.json([...activeAlerts.values()])
+})
+
+// Returns all alert events from the past 24 hours, newest first
+app.get('/history', (req, res) => {
+  pruneHistory()
+  res.json([...alertHistory].reverse())
 })
 
 // Demo endpoint — static example of all known alert types
