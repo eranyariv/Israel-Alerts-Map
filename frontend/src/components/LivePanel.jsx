@@ -29,7 +29,7 @@ export default function LivePanel({ currentAlerts, lastRefresh, loading, onAreaC
         }`} />
         <div className="flex-1 min-w-0">
           <div className="text-sm font-bold text-white">
-            {isQuiet ? 'שקט — אין התראות פעילות' : `${currentAlerts.length} התראה פעילה`}
+            {isQuiet ? 'שקט — אין התראות פעילות' : `${currentAlerts.length} ${currentAlerts.length === 1 ? 'התראה פעילה' : 'התראות פעילות'}`}
           </div>
           <div className="text-xs text-slate-400 mt-0.5">
             {loading
@@ -54,7 +54,7 @@ export default function LivePanel({ currentAlerts, lastRefresh, loading, onAreaC
             </span>
           </div>
           {alert.cities?.length > 0 && (
-            <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+            <div className="space-y-1 pr-1">
               {alert.cities.map(city => (
                 <div key={city} className="flex items-center gap-2 text-xs">
                   <MapPin size={10} className="text-slate-500 shrink-0" />

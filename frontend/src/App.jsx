@@ -156,15 +156,17 @@ export default function App() {
           >
             <Settings size={16} className="text-slate-300" />
           </button>
-          <button
-            onClick={handleRefresh}
-            disabled={loading}
-            className="p-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50
-                       disabled:cursor-not-allowed transition-colors touch-manipulation"
-            title="רענן נתונים"
-          >
-            <RefreshCw size={16} className={`text-white ${loading ? 'animate-spin' : ''}`} />
-          </button>
+          {mode === 'history' && (
+            <button
+              onClick={handleRefresh}
+              disabled={loading}
+              className="p-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50
+                         disabled:cursor-not-allowed transition-colors touch-manipulation"
+              title="רענן נתונים"
+            >
+              <RefreshCw size={16} className={`text-white ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          )}
         </div>
 
         {/* Mode switch */}
@@ -226,7 +228,7 @@ export default function App() {
               <Shield size={13} className={visibleAlerts.length > 0 ? 'text-red-400' : 'text-green-400'} />
               <span className="text-xs text-slate-300 truncate">
                 {visibleAlerts.length > 0
-                  ? `${visibleAlerts.length} התראה פעילה${lastRefresh ? ` · ${formatTime(lastRefresh)}` : ''}`
+                  ? `${visibleAlerts.length} ${visibleAlerts.length === 1 ? 'התראה פעילה' : 'התראות פעילות'}${lastRefresh ? ` · ${formatTime(lastRefresh)}` : ''}`
                   : mode === 'live'
                     ? `שקט — אין התראות פעילות${lastRefresh ? ` · ${formatTime(lastRefresh)}` : ''}`
                     : lastRefresh ? `עודכן ${formatTime(lastRefresh)}` : 'מפת התראות ישראל'}
@@ -240,14 +242,16 @@ export default function App() {
             >
               <Settings size={16} className="text-slate-300" />
             </button>
-            <button
-              onClick={handleRefresh}
-              disabled={loading}
-              className="w-10 h-10 rounded-full bg-blue-600 shadow-lg flex items-center
-                         justify-center disabled:opacity-50 touch-manipulation shrink-0"
-            >
-              <RefreshCw size={16} className={`text-white ${loading ? 'animate-spin' : ''}`} />
-            </button>
+            {mode === 'history' && (
+              <button
+                onClick={handleRefresh}
+                disabled={loading}
+                className="w-10 h-10 rounded-full bg-blue-600 shadow-lg flex items-center
+                           justify-center disabled:opacity-50 touch-manipulation shrink-0"
+              >
+                <RefreshCw size={16} className={`text-white ${loading ? 'animate-spin' : ''}`} />
+              </button>
+            )}
           </div>
 
           {/* Mode switch row */}
