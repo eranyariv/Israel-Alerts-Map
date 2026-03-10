@@ -181,22 +181,41 @@ export function useAlerts({ source = 'oref', demoMode = false } = {}) {
   const [error,         setError]         = useState(null)
   const [lastRefresh,   setLastRefresh]   = useState(null)
   const [storedCount,   setStoredCount]   = useState(historyCount)
+  const [relayHealth,   setRelayHealth]   = useState(null) // null=unknown, {reachable,connected}
 
-  // ── Live: poll relay /active every 5s ─────────────────────────────────────
+  // ── Live: poll relay /active + /health every 5s ────────────────────────────
 
   const refreshLive = useCallback(async () => {
     if (!RELAY_URL) { log.warn('[live] VITE_RA_RELAY_URL not configured'); return }
     const endpoint = demoMode ? 'demo' : 'active'
-    try {
-      const res = await fetch(`${RELAY_URL}/${endpoint}`, { cache: 'no-store' })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
-      const alerts = (Array.isArray(data) ? data : []).map(parseRelayItem).filter(Boolean)
-      setCurrentAlerts(alerts)
-      setLastRefresh(new Date())
-      log.info(`[live] relay /${endpoint} → ${alerts.length} active alert(s)`)
-    } catch (e) {
-      log.warn('[live] relay fetch failed', e.message)
+    const [alertsResult, healthResult] = await Promise.allSettled([
+      fetch(`${RELAY_URL}/${endpoint}`, { cache: 'no-store' }),
+      fetch(`${RELAY_URL}/health`,      { cache: 'no-store' }),
+    ])
+
+    // Process /active
+    if (alertsResult.status === 'fulfilled' && alertsResult.value.ok) {
+      try {
+        const data   = await alertsResult.value.json()
+        const alerts = (Array.isArray(data) ? data : []).map(parseRelayItem).filter(Boolean)
+        setCurrentAlerts(alerts)
+        setLastRefresh(new Date())
+        log.info(`[live] relay /${endpoint} → ${alerts.length} active alert(s)`)
+      } catch (e) { log.warn('[live] relay parse failed', e.message) }
+    } else {
+      log.warn('[live] relay /active fetch failed', alertsResult.reason?.message)
+    }
+
+    // Process /health
+    if (healthResult.status === 'fulfilled' && healthResult.value.ok) {
+      try {
+        const h = await healthResult.value.json()
+        setRelayHealth({ reachable: true, connected: h.ok === true })
+        log.info(`[live] relay /health → reachable=true connected=${h.ok}`)
+      } catch (e) { setRelayHealth({ reachable: true, connected: false }) }
+    } else {
+      setRelayHealth({ reachable: false, connected: false })
+      log.warn('[live] relay /health fetch failed')
     }
   }, [demoMode])
 
@@ -266,6 +285,6 @@ export function useAlerts({ source = 'oref', demoMode = false } = {}) {
 
   return {
     currentAlerts, heatmapData, storedCount, loading, error, lastRefresh,
-    refresh, refreshLive, wipeHistory,
+    refresh, refreshLive, wipeHistory, relayHealth,
   }
 }

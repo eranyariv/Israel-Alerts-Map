@@ -1,5 +1,5 @@
 <?php
-$APIKEY  = 'CqfarpQQEpiQrskKallxRXJKnbuGUywXeVgafWGkTCWbaAGsJzeltxtzuMNrjFVo';
+$APIKEY  = 'pr_HllnocGJaCSjPQEzhzNYTmXYNVfNfoWXceDCpeauWEjmjJJmneJpcNBVCAtLTLbo';
 $RA_BASE = 'https://redalert.orielhaim.com';
 
 header('Content-Type: application/json; charset=utf-8');

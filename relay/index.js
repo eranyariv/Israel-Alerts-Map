@@ -182,7 +182,7 @@ app.use((req, res, next) => {
   next()
 })
 
-// Root — HTML documentation page
+// Root — HTML announcement + documentation page
 app.get('/', (req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8')
   res.send(`<!DOCTYPE html>
@@ -190,70 +190,247 @@ app.get('/', (req, res) => {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RedAlert Relay — API Docs</title>
+<title>RedAlert Relay — Open REST API for Israeli Red Alerts</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
-  body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; padding: 2rem; line-height: 1.6 }
-  h1 { font-size: 1.6rem; font-weight: 700; color: #f8fafc; margin-bottom: .25rem }
-  .subtitle { color: #94a3b8; font-size: .9rem; margin-bottom: 2.5rem }
-  .status { display: inline-flex; align-items: center; gap: .4rem; font-size: .8rem;
-            background: #1e293b; border: 1px solid #334155; border-radius: 999px;
-            padding: .2rem .75rem; margin-bottom: 2.5rem }
-  .dot { width: 8px; height: 8px; border-radius: 50% }
-  .dot.ok { background: #22c55e } .dot.err { background: #ef4444 }
-  .grid { display: grid; gap: 1rem }
+  body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; line-height: 1.6 }
+  a { color: #60a5fa; text-decoration: none }
+  a:hover { text-decoration: underline }
+  code { font-family: monospace; background: #1e293b; border: 1px solid #334155;
+         border-radius: .3rem; padding: .1rem .35rem; font-size: .88em; color: #93c5fd }
+
+  /* ── layout ── */
+  .page { max-width: 760px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem }
+
+  /* ── announcement post ── */
+  .post { border: 1px solid #334155; border-radius: 1rem; overflow: hidden; margin-bottom: 3rem }
+  .post-header { background: linear-gradient(135deg, #1a1033 0%, #0f1f3d 100%);
+                 border-bottom: 1px solid #334155; padding: 2rem 2rem 1.5rem }
+  .post-eyebrow { font-size: .72rem; font-weight: 700; letter-spacing: .1em;
+                  text-transform: uppercase; color: #f87171; margin-bottom: .6rem }
+  .post-title { font-size: 1.65rem; font-weight: 800; color: #f8fafc; line-height: 1.25;
+                margin-bottom: .75rem }
+  .post-title span { color: #f87171 }
+  .post-meta { font-size: .8rem; color: #64748b }
+  .post-meta strong { color: #94a3b8 }
+  .post-body { padding: 1.75rem 2rem; background: #111827; display: flex; flex-direction: column; gap: 1.1rem }
+  .post-body p { color: #cbd5e1; font-size: .96rem }
+  .post-body h3 { font-size: .85rem; font-weight: 700; text-transform: uppercase;
+                  letter-spacing: .07em; color: #64748b; margin-top: .4rem }
+
+  .ep-table { width: 100%; border-collapse: collapse; font-size: .875rem }
+  .ep-table th { text-align: left; padding: .5rem .75rem; color: #64748b; font-size: .75rem;
+                 font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
+                 border-bottom: 1px solid #1e293b }
+  .ep-table td { padding: .5rem .75rem; border-bottom: 1px solid #1e293b; color: #cbd5e1 }
+  .ep-table td:first-child { font-family: monospace; color: #93c5fd; white-space: nowrap }
+  .ep-table tr:last-child td { border-bottom: none }
+
+  .types-grid { display: flex; flex-wrap: wrap; gap: .4rem }
+  .type-chip { font-family: monospace; font-size: .75rem; background: #1e293b;
+               border: 1px solid #334155; border-radius: .3rem; padding: .2rem .55rem;
+               color: #a5b4fc }
+
+  .example-block { background: #0d1117; border: 1px solid #334155; border-radius: .5rem;
+                   padding: 1rem 1.2rem; font-family: monospace; font-size: .8rem;
+                   color: #86efac; overflow-x: auto; white-space: pre }
+
+  .infra-list { list-style: none; display: flex; flex-direction: column; gap: .35rem }
+  .infra-list li { font-size: .9rem; color: #94a3b8; display: flex; gap: .5rem }
+  .infra-list li::before { content: '→'; color: #334155 }
+
+  .cta-row { display: flex; gap: .75rem; flex-wrap: wrap; padding-top: .3rem }
+  .cta { display: inline-flex; align-items: center; gap: .4rem; font-size: .85rem;
+         font-weight: 600; padding: .5rem 1.1rem; border-radius: .5rem;
+         text-decoration: none; transition: opacity .15s }
+  .cta:hover { opacity: .85; text-decoration: none }
+  .cta-primary { background: #1d4ed8; color: #fff; border: 1px solid #3b82f6 }
+  .cta-secondary { background: #1e293b; color: #cbd5e1; border: 1px solid #334155 }
+
+  /* ── status banner ── */
+  .status-banner { width: 100%; padding: .9rem 1.5rem; display: flex; align-items: center;
+                   gap: .85rem; font-size: .95rem; font-weight: 600; letter-spacing: .01em }
+  .status-banner.ok  { background: #052e16; border-bottom: 2px solid #16a34a; color: #bbf7d0 }
+  .status-banner.err { background: #2d0a0a; border-bottom: 2px solid #dc2626; color: #fecaca }
+  .status-icon { font-size: 1.25rem; flex-shrink: 0 }
+  .status-label { flex: 1 }
+  .status-label strong { color: inherit }
+  .status-label small { display: block; font-size: .75rem; font-weight: 400; opacity: .7; margin-top: .1rem }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0 }
+  .dot.ok  { background: #22c55e; box-shadow: 0 0 6px #22c55e }
+  .dot.err { background: #ef4444; box-shadow: 0 0 6px #ef4444 }
+
+  /* ── API reference ── */
+  .section-title { font-size: 1.1rem; font-weight: 700; color: #f1f5f9;
+                   margin-bottom: 1rem; padding-bottom: .5rem;
+                   border-bottom: 1px solid #1e293b }
+  .api-grid { display: flex; flex-direction: column; gap: .85rem }
   .card { background: #1e293b; border: 1px solid #334155; border-radius: .75rem; overflow: hidden }
-  .card-head { display: flex; align-items: center; gap: .75rem; padding: .9rem 1.2rem;
+  .card-head { display: flex; align-items: center; gap: .75rem; padding: .8rem 1.1rem;
                border-bottom: 1px solid #334155; background: #1a2744 }
   .method { font-size: .7rem; font-weight: 700; background: #1d4ed8; color: #bfdbfe;
             border-radius: .3rem; padding: .15rem .5rem; letter-spacing: .05em }
-  .path { font-family: monospace; font-size: 1rem; color: #93c5fd; font-weight: 600 }
-  .card-body { padding: 1rem 1.2rem }
-  .desc { color: #cbd5e1; margin-bottom: .75rem; font-size: .93rem }
-  .response-label { font-size: .75rem; font-weight: 600; color: #64748b;
-                    text-transform: uppercase; letter-spacing: .06em; margin-bottom: .4rem }
-  .field-list { list-style: none; display: flex; flex-direction: column; gap: .3rem }
-  .field-list li { font-size: .85rem; display: flex; gap: .6rem }
-  .field-name { font-family: monospace; color: #86efac; white-space: nowrap }
-  .field-type { color: #64748b; font-size: .8rem; white-space: nowrap }
-  .field-desc { color: #94a3b8 }
-  .try-link { display: inline-block; margin-top: .9rem; font-size: .8rem; color: #60a5fa;
-              text-decoration: none; border: 1px solid #1d4ed8; border-radius: .4rem;
-              padding: .25rem .7rem; transition: background .15s }
-  .try-link:hover { background: #1d4ed8 }
-  .tag { font-size: .7rem; padding: .1rem .45rem; border-radius: .3rem; font-weight: 600 }
+  .path { font-family: monospace; font-size: .95rem; color: #93c5fd; font-weight: 600 }
+  .tag { font-size: .7rem; padding: .1rem .45rem; border-radius: .3rem; font-weight: 600; margin-left: auto }
   .tag-live   { background: #14532d; color: #86efac }
   .tag-static { background: #1e3a5f; color: #93c5fd }
+  .card-body { padding: .9rem 1.1rem }
+  .card-body p { color: #cbd5e1; font-size: .9rem; margin-bottom: .7rem }
+  .field-list { list-style: none; display: flex; flex-direction: column; gap: .28rem }
+  .field-list li { font-size: .83rem; display: flex; gap: .55rem; flex-wrap: wrap }
+  .field-name { font-family: monospace; color: #86efac; white-space: nowrap }
+  .field-type { color: #64748b; font-size: .78rem; white-space: nowrap; padding-top: .1rem }
+  .field-desc { color: #94a3b8 }
+  .try-link { display: inline-block; margin-top: .75rem; font-size: .8rem; color: #60a5fa;
+              border: 1px solid #1d4ed8; border-radius: .4rem;
+              padding: .22rem .65rem; transition: background .15s }
+  .try-link:hover { background: #1d4ed8; color: #fff; text-decoration: none }
+
   footer { margin-top: 3rem; font-size: .78rem; color: #475569; text-align: center }
+
+  @media (max-width: 520px) {
+    .post-header, .post-body { padding-left: 1.2rem; padding-right: 1.2rem }
+    .post-title { font-size: 1.3rem }
+    .cta-row { flex-direction: column }
+  }
 </style>
 </head>
 <body>
-<h1>🚨 RedAlert Relay</h1>
-<p class="subtitle">Real-time Israeli Red Alert proxy — forwards Socket.IO events from redalert.orielhaim.com and exposes a REST API.</p>
 
-<div class="status">
-  <span class="dot ${socket.connected ? 'ok' : 'err'}"></span>
-  <span>${socket.connected ? 'Connected to RedAlert upstream' : 'Disconnected from RedAlert upstream'}</span>
+<!-- ── Live status banner ──────────────────────────────────────────────── -->
+<div id="status-banner" class="status-banner">
+  <span class="dot" id="status-dot"></span>
+  <div class="status-label">
+    <strong id="status-title">Checking connection…</strong>
+    <small id="status-sub"></small>
+  </div>
+  <a href="/health" style="font-size:.78rem;font-weight:500;opacity:.75;text-decoration:none;color:inherit;border:1px solid currentColor;border-radius:.4rem;padding:.2rem .6rem">health →</a>
 </div>
+<script>
+  (function poll() {
+    fetch('/health').then(r => r.json()).then(d => {
+      var banner = document.getElementById('status-banner')
+      var dot    = document.getElementById('status-dot')
+      var title  = document.getElementById('status-title')
+      var sub    = document.getElementById('status-sub')
+      var ok = d.ok
+      banner.className = 'status-banner ' + (ok ? 'ok' : 'err')
+      dot.className    = 'dot ' + (ok ? 'ok' : 'err')
+      title.textContent = ok ? 'Connected to RedAlert upstream' : 'Disconnected from RedAlert upstream'
+      sub.textContent   = ok ? 'Relay is live — actively receiving alerts from redalert.orielhaim.com'
+                             : 'Upstream connection lost — alerts may be stale. Reconnecting automatically.'
+    }).catch(function() {
+      document.getElementById('status-title').textContent = 'Status unavailable'
+    }).finally(function() { setTimeout(poll, 10000) })
+  })()
+</script>
 
-<div class="grid">
+<div class="page">
+
+<!-- ── Announcement Post ───────────────────────────────────────────────── -->
+<article class="post">
+  <div class="post-header">
+    <div class="post-eyebrow">🚨 Open API · Free to Use</div>
+    <h1 class="post-title">RedAlert <span>Relay</span> — Open REST API<br>for Israeli Red Alert Data</h1>
+    <div class="post-meta">
+      By <strong>Eran Yariv</strong> &nbsp;·&nbsp;
+      <a href="https://yariv.org">yariv.org</a> &nbsp;·&nbsp;
+      March 2026
+    </div>
+  </div>
+
+  <div class="post-body">
+
+    <p>
+      Israel's Home Front Command (Pikud HaOref) issues real-time alerts for rocket fire,
+      hostile aircraft, terrorist infiltrations, earthquakes, and more. A third-party service
+      (<a href="https://redalert.orielhaim.com" target="_blank">redalert.orielhaim.com</a>)
+      aggregates these in real time — but consuming it requires maintaining a persistent
+      Socket.IO WebSocket connection.
+    </p>
+
+    <p>
+      <strong style="color:#f1f5f9">The relay solves this.</strong>
+      It maintains a single persistent upstream connection 24/7, caches the current alert
+      state and a rolling 24-hour history, and exposes everything as a simple REST API.
+      Any client can just poll an endpoint — no WebSocket, no SDK, no setup.
+    </p>
+
+    <h3>Endpoints</h3>
+    <table class="ep-table">
+      <thead><tr><th>Endpoint</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>/active</td><td>Currently active alerts — type, Hebrew title, affected cities, start time. Empty array <code>[]</code> when quiet.</td></tr>
+        <tr><td>/history</td><td>All events from the past 24 hours, newest first. Includes <code>startedAt</code> / <code>endedAt</code> (<code>null</code> if ongoing). <a href="/history">View →</a></td></tr>
+        <tr><td>/health</td><td>Upstream connectivity status, reconnect count, diagnostics.</td></tr>
+        <tr><td>/demo</td><td>Static sample payload with all 8 alert types — for building UIs without waiting for a real alert.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Example response from /active (during an active alert)</h3>
+    <div class="example-block">[
+  {
+    "type":      "missiles",
+    "title":     "ירי רקטות וטילים",
+    "cities":    ["קריית שמונה", "מרגליות"],
+    "startedAt": "2026-03-10T18:07:53.984Z"
+  }
+]</div>
+
+    <h3>Alert types supported</h3>
+    <div class="types-grid">
+      <span class="type-chip">missiles</span>
+      <span class="type-chip">hostileAircraftIntrusion</span>
+      <span class="type-chip">terroristInfiltration</span>
+      <span class="type-chip">radiologicalEvent</span>
+      <span class="type-chip">earthQuake</span>
+      <span class="type-chip">tsunami</span>
+      <span class="type-chip">hazardousMaterials</span>
+      <span class="type-chip">newsFlash</span>
+    </div>
+
+    <h3>Infrastructure</h3>
+    <ul class="infra-list">
+      <li>Hosted on <strong>Azure Container Apps</strong>, UAE North (low latency to Israel)</li>
+      <li>Alert history persisted across container restarts via <strong>Azure Files</strong></li>
+      <li>Auto-reconnects to upstream on disconnect — zero manual intervention</li>
+      <li>Open CORS — call from any origin, no API key required</li>
+    </ul>
+
+    <p>
+      Built as the backend for the open
+      <a href="https://yariv.org/map/" target="_blank">Israel Red Alert Map</a> —
+      a live choropleth map showing active and historical alerts across Israel.
+    </p>
+
+    <div class="cta-row">
+      <a class="cta cta-primary" href="/active">/active — Live data</a>
+      <a class="cta cta-secondary" href="/history">/history — Past 24h</a>
+      <a class="cta cta-secondary" href="https://yariv.org/map/" target="_blank">Alert Map ↗</a>
+    </div>
+
+  </div>
+</article>
+
+<!-- ── API Reference ───────────────────────────────────────────────────── -->
+<div class="section-title">API Reference</div>
+<div class="api-grid">
 
   <div class="card">
     <div class="card-head">
       <span class="method">GET</span>
       <span class="path">/active</span>
-      <span class="tag tag-live" style="margin-left:auto">live</span>
+      <span class="tag tag-live">live</span>
     </div>
     <div class="card-body">
-      <p class="desc">Returns all alert types that are currently active (non-empty while sirens are sounding). Empty array <code>[]</code> when quiet.</p>
-      <div class="response-label">Response — array of:</div>
+      <p>Returns all alert types that are currently active. Empty array <code>[]</code> when quiet.</p>
       <ul class="field-list">
-        <li><span class="field-name">type</span><span class="field-type">string</span><span class="field-desc">Alert type key (e.g. <code>missiles</code>, <code>hostileAircraftIntrusion</code>)</span></li>
+        <li><span class="field-name">type</span><span class="field-type">string</span><span class="field-desc">Alert type key (e.g. <code>missiles</code>)</span></li>
         <li><span class="field-name">title</span><span class="field-type">string</span><span class="field-desc">Hebrew display title</span></li>
         <li><span class="field-name">cities</span><span class="field-type">string[]</span><span class="field-desc">Affected city names (Hebrew), merged across all packets for this type</span></li>
         <li><span class="field-name">startedAt</span><span class="field-type">ISO 8601</span><span class="field-desc">When this alert type first fired in the current event</span></li>
       </ul>
-      <a class="try-link" href="/active" target="_blank">Try it →</a>
+      <a class="try-link" href="/active">Try it →</a>
     </div>
   </div>
 
@@ -261,19 +438,18 @@ app.get('/', (req, res) => {
     <div class="card-head">
       <span class="method">GET</span>
       <span class="path">/history</span>
-      <span class="tag tag-live" style="margin-left:auto">live</span>
+      <span class="tag tag-live">live</span>
     </div>
     <div class="card-body">
-      <p class="desc">Returns all alert events seen in the <strong>past 24 hours</strong>, newest first. Entries are recorded from the moment the relay started; events before the last container restart are not available. <code>endedAt</code> is <code>null</code> for still-active alerts.</p>
-      <div class="response-label">Response — array of:</div>
+      <p>All alert events seen in the <strong>past 24 hours</strong>, newest first. <code>endedAt</code> is <code>null</code> for still-active alerts. History survives container restarts via Azure Files.</p>
       <ul class="field-list">
         <li><span class="field-name">type</span><span class="field-type">string</span><span class="field-desc">Alert type key</span></li>
         <li><span class="field-name">title</span><span class="field-type">string</span><span class="field-desc">Hebrew display title</span></li>
-        <li><span class="field-name">cities</span><span class="field-type">string[]</span><span class="field-desc">All cities that were alerted during this event</span></li>
+        <li><span class="field-name">cities</span><span class="field-type">string[]</span><span class="field-desc">All cities alerted during this event</span></li>
         <li><span class="field-name">startedAt</span><span class="field-type">ISO 8601</span><span class="field-desc">When the alert began</span></li>
         <li><span class="field-name">endedAt</span><span class="field-type">ISO 8601 | null</span><span class="field-desc">When the all-clear was received, or <code>null</code> if still active</span></li>
       </ul>
-      <a class="try-link" href="/history" target="_blank">Try it →</a>
+      <a class="try-link" href="/history">Try it →</a>
     </div>
   </div>
 
@@ -281,23 +457,19 @@ app.get('/', (req, res) => {
     <div class="card-head">
       <span class="method">GET</span>
       <span class="path">/health</span>
-      <span class="tag tag-live" style="margin-left:auto">live</span>
+      <span class="tag tag-live">live</span>
     </div>
     <div class="card-body">
-      <p class="desc">Connection health and diagnostics. Returns <code>ok: true</code> when the upstream Socket.IO connection is live.</p>
-      <div class="response-label">Response fields:</div>
+      <p>Connection diagnostics. Returns <code>ok: true</code> when the upstream Socket.IO connection is live.</p>
       <ul class="field-list">
         <li><span class="field-name">ok</span><span class="field-type">boolean</span><span class="field-desc">True when connected to upstream</span></li>
-        <li><span class="field-name">connected</span><span class="field-type">boolean</span><span class="field-desc">Same as <code>ok</code></span></li>
         <li><span class="field-name">connectedAt</span><span class="field-type">ISO 8601 | null</span><span class="field-desc">Timestamp of last successful connection</span></li>
         <li><span class="field-name">disconnectedAt</span><span class="field-type">ISO 8601 | null</span><span class="field-desc">Timestamp of last disconnect</span></li>
-        <li><span class="field-name">disconnectReason</span><span class="field-type">string | null</span><span class="field-desc">Socket.IO disconnect reason code</span></li>
         <li><span class="field-name">reconnectAttempts</span><span class="field-type">number</span><span class="field-desc">Cumulative reconnect attempts since startup</span></li>
-        <li><span class="field-name">lastError</span><span class="field-type">object | null</span><span class="field-desc">Details of the most recent connection error</span></li>
         <li><span class="field-name">activeCount</span><span class="field-type">number</span><span class="field-desc">Number of currently active alert types</span></li>
         <li><span class="field-name">activeTypes</span><span class="field-type">string[]</span><span class="field-desc">Keys of currently active alert types</span></li>
       </ul>
-      <a class="try-link" href="/health" target="_blank">Try it →</a>
+      <a class="try-link" href="/health">Try it →</a>
     </div>
   </div>
 
@@ -305,11 +477,10 @@ app.get('/', (req, res) => {
     <div class="card-head">
       <span class="method">GET</span>
       <span class="path">/demo</span>
-      <span class="tag tag-static" style="margin-left:auto">static</span>
+      <span class="tag tag-static">static</span>
     </div>
     <div class="card-body">
-      <p class="desc">Returns a static example payload containing one entry for each of the 8 known alert types. Useful for UI development and testing without waiting for a real alert.</p>
-      <div class="response-label">Alert types included:</div>
+      <p>Static example payload with one entry for each of the 8 known alert types. Useful for UI development without waiting for a real alert.</p>
       <ul class="field-list">
         <li><span class="field-name">missiles</span><span class="field-desc">ירי רקטות וטילים — Rocket/missile fire</span></li>
         <li><span class="field-name">hostileAircraftIntrusion</span><span class="field-desc">חדירת כלי טיס עוין — Hostile aircraft</span></li>
@@ -320,13 +491,14 @@ app.get('/', (req, res) => {
         <li><span class="field-name">hazardousMaterials</span><span class="field-desc">אירוע חומרים מסוכנים — Hazardous materials</span></li>
         <li><span class="field-name">newsFlash</span><span class="field-desc">התראה מקדימה — Preliminary warning / news flash</span></li>
       </ul>
-      <a class="try-link" href="/demo" target="_blank">Try it →</a>
+      <a class="try-link" href="/demo">Try it →</a>
     </div>
   </div>
 
 </div>
 
-<footer>RedAlert Relay · Azure Container Apps · UAE North &nbsp;·&nbsp; upstream: redalert.orielhaim.com</footer>
+<footer>RedAlert Relay &nbsp;·&nbsp; Azure Container Apps, UAE North &nbsp;·&nbsp; upstream: redalert.orielhaim.com &nbsp;·&nbsp; <a href="https://yariv.org">yariv.org</a></footer>
+</div>
 </body>
 </html>`)
 })

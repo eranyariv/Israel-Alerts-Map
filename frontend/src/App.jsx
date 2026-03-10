@@ -22,6 +22,27 @@ const HISTORY_TABS = [
 function defaultFrom() { const d = new Date(); d.setMonth(d.getMonth() - 3); return d }
 function defaultTo()   { return new Date() }
 
+function RelayStatus({ health, mode }) {
+  if (mode !== 'live') return null
+  const reachable = health?.reachable ?? null
+  const connected = health ? (health.reachable ? health.connected : false) : null
+  const dot = (ok, label) => (
+    <span className="flex items-center gap-1">
+      <span className={`block w-1.5 h-1.5 rounded-full shrink-0 ${
+        ok === null ? 'bg-slate-600' : ok ? 'bg-green-500' : 'bg-red-500'
+      }`} />
+      <span className="text-[10px] text-slate-500">{label}</span>
+    </span>
+  )
+  return (
+    <div className="flex items-center justify-center gap-3 px-4 py-1.5 border-b border-slate-700/50">
+      {dot(reachable, 'ממסר')}
+      <span className="w-px h-2.5 bg-slate-700" />
+      {dot(connected, 'upstream')}
+    </div>
+  )
+}
+
 function ModeSwitch({ mode, onChange }) {
   return (
     <div className="flex bg-slate-900/60 rounded-full p-0.5 border border-slate-600 shrink-0">
@@ -64,11 +85,11 @@ export default function App() {
   const [debugShown,      setDebugShown]      = useState(false)
   const [settingsOpen,    setSettingsOpen]    = useState(false)
   const [mapType,         setMapType]         = useState(() => localStorage.getItem('mapType') || DEFAULT_MAP_TYPE)
-  const [alertsSource,    setAlertsSource]    = useState(() => localStorage.getItem('alertsSource') || 'oref')
+  const [alertsSource,    setAlertsSource]    = useState('redalert')
   const [demoMode,        setDemoMode]        = useState(false)
   const debugTapRef = useRef({ count: 0, timer: null })
 
-  const { currentAlerts, heatmapData, storedCount, loading, error, lastRefresh, refresh, refreshLive, wipeHistory } = useAlerts({ source: alertsSource, demoMode })
+  const { currentAlerts, heatmapData, storedCount, loading, error, lastRefresh, refresh, refreshLive, wipeHistory, relayHealth } = useAlerts({ source: 'redalert', demoMode })
 
   // Toggle debug with backtick key (works on desktop + physical keyboards on mobile)
   useEffect(() => {
@@ -170,8 +191,11 @@ export default function App() {
         </div>
 
         {/* Mode switch */}
-        <div className="flex items-center justify-center px-4 py-3 border-b border-slate-700">
-          <ModeSwitch mode={mode} onChange={handleModeChange} />
+        <div className="flex flex-col items-center gap-0">
+          <div className="flex items-center justify-center px-4 py-3 border-b border-slate-700 w-full">
+            <ModeSwitch mode={mode} onChange={handleModeChange} />
+          </div>
+          <RelayStatus health={relayHealth} mode={mode} />
         </div>
 
         {/* History tabs — only in history mode */}
@@ -255,8 +279,9 @@ export default function App() {
           </div>
 
           {/* Mode switch row */}
-          <div className="flex justify-center">
+          <div className="flex flex-col items-center gap-1">
             <ModeSwitch mode={mode} onChange={handleModeChange} />
+            <RelayStatus health={relayHealth} mode={mode} />
           </div>
         </div>
 
