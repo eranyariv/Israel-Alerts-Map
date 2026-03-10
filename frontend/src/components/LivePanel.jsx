@@ -1,11 +1,15 @@
 import { Activity, MapPin } from 'lucide-react'
 import { formatTime } from '../utils/dateFormat'
 
-const CAT_LABELS = {
-  1: 'ירי רקטות וטילים',
-  2: 'חדירת כלי טיס עויין',
-  3: 'חדירת מחבלים',
-  4: 'רעידת אדמה',
+const CAT_COLORS = {
+  1: '#dc2626',  // red       — missiles/rockets
+  2: '#d946ef',  // magenta   — hostile aircraft
+  3: '#7f1d1d',  // dark red  — terrorist infiltration
+  4: '#06b6d4',  // cyan      — earthquake
+  5: '#f97316',  // orange    — news flash
+  6: '#facc15',  // yellow    — radiological
+  7: '#3b82f6',  // blue      — tsunami
+  8: '#84cc16',  // lime      — hazardous materials
 }
 
 export default function LivePanel({ currentAlerts, lastRefresh, loading, onAreaClick }) {
@@ -38,12 +42,15 @@ export default function LivePanel({ currentAlerts, lastRefresh, loading, onAreaC
       </div>
 
       {/* Active alert details */}
-      {currentAlerts.map(alert => (
-        <div key={alert.id} className="bg-red-900/20 border border-red-800/40 rounded-xl p-3 space-y-2">
+      {currentAlerts.map(alert => {
+        const color = CAT_COLORS[alert.cat] ?? '#ef4444'
+        return (
+        <div key={alert.id} className="rounded-xl p-3 space-y-2"
+          style={{ background: `${color}18`, border: `1px solid ${color}55` }}>
           <div className="flex items-center gap-2">
-            <Activity size={14} className="text-red-400 shrink-0" />
-            <span className="text-sm font-semibold text-red-300">
-              {alert.title || CAT_LABELS[alert.cat] || 'התראה'}
+            <Activity size={14} style={{ color }} className="shrink-0" />
+            <span className="text-sm font-semibold" style={{ color }}>
+              {alert.title || 'התראה'}
             </span>
           </div>
           {alert.cities?.length > 0 && (
@@ -63,7 +70,8 @@ export default function LivePanel({ currentAlerts, lastRefresh, loading, onAreaC
             </div>
           )}
         </div>
-      ))}
+        )
+      })}
 
       <p className="text-xs text-slate-500 text-center pt-1">
         מתרענן אוטומטית כל 10 שניות

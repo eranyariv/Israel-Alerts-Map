@@ -65,9 +65,10 @@ export default function App() {
   const [settingsOpen,    setSettingsOpen]    = useState(false)
   const [mapType,         setMapType]         = useState(() => localStorage.getItem('mapType') || DEFAULT_MAP_TYPE)
   const [alertsSource,    setAlertsSource]    = useState(() => localStorage.getItem('alertsSource') || 'oref')
+  const [demoMode,        setDemoMode]        = useState(false)
   const debugTapRef = useRef({ count: 0, timer: null })
 
-  const { currentAlerts, heatmapData, storedCount, loading, error, lastRefresh, refresh, refreshLive, wipeHistory, connectWebSocket, disconnectWebSocket } = useAlerts({ source: alertsSource })
+  const { currentAlerts, heatmapData, storedCount, loading, error, lastRefresh, refresh, refreshLive, wipeHistory, connectWebSocket, disconnectWebSocket } = useAlerts({ source: alertsSource, demoMode })
 
   // Toggle debug with backtick key (works on desktop + physical keyboards on mobile)
   useEffect(() => {
@@ -93,13 +94,14 @@ export default function App() {
   useEffect(() => { refresh(filters) }, []) // eslint-disable-line
 
   // Live mode: WebSocket for push + REST polling every 10s as fallback
+  // Re-runs when demoMode changes so the relay seed endpoint is refreshed
   useEffect(() => {
     if (mode !== 'live') { disconnectWebSocket(); return }
     refreshLive()
     connectWebSocket()
     const pollId = setInterval(refreshLive, 10_000)
     return () => { disconnectWebSocket(); clearInterval(pollId) }
-  }, [mode, connectWebSocket, disconnectWebSocket, refreshLive])
+  }, [mode, demoMode, connectWebSocket, disconnectWebSocket, refreshLive])
 
   const handleRefresh = () => mode === 'live' ? refreshLive() : refresh(filters)
   const handleFilterChange = (next) => { setFilters(next); refresh(next) }
@@ -132,9 +134,7 @@ export default function App() {
   return (
     <div className="flex w-screen overflow-hidden font-hebrew bg-slate-900" style={{height:'100dvh'}} dir="rtl">
 
-      {visibleAlerts.length > 0 && (
-        <AlertBanner alerts={visibleAlerts} onDismiss={() => setDismissedId(visibleAlerts[0]?.id)} />
-      )}
+
 
       {/* ── Desktop Sidebar ─────────────────────────────────────────── */}
       <aside className="hidden md:flex w-80 flex-col bg-slate-800 border-l border-slate-700 z-10 shrink-0">
@@ -314,6 +314,8 @@ export default function App() {
         onMapTypeChange={(t) => { setMapType(t); localStorage.setItem('mapType', t) }}
         alertsSource={alertsSource}
         onAlertsSourceChange={(s) => { setAlertsSource(s); localStorage.setItem('alertsSource', s) }}
+        demoMode={demoMode}
+        onDemoModeChange={setDemoMode}
       />
 
       {/* Mobile Bottom Sheet */}

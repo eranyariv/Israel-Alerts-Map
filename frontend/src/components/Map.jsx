@@ -7,7 +7,7 @@ import { getHeatColor } from '../utils/heatmap'
 import { MAP_TILES, DEFAULT_MAP_TYPE } from '../utils/mapTiles'
 
 const ISRAEL_CENTER = [31.0461, 34.8516]
-const DEFAULT_ZOOM  = 7
+const DEFAULT_ZOOM  = 8
 
 const BTN_STYLE = {
   width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -130,9 +130,21 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
     2: 'חדירת כלי טיס עויין',
     3: 'חדירת מחבלים',
     4: 'רעידת אדמה',
-    5: 'עדכון מידע',
+    5: 'התראה מקדימה',
+    6: 'אירוע רדיולוגי',
+    7: 'צונאמי',
+    8: 'אירוע חומרים מסוכנים',
   }
-  const CAT_COLORS = { 1: '#ef4444', 2: '#f97316', 3: '#a855f7', 4: '#06b6d4', 5: '#eab308' }
+  const CAT_COLORS = {
+    1: '#dc2626',  // red       — missiles/rockets
+    2: '#d946ef',  // magenta   — hostile aircraft
+    3: '#7f1d1d',  // dark red  — terrorist infiltration
+    4: '#06b6d4',  // cyan      — earthquake
+    5: '#f97316',  // orange    — news flash
+    6: '#facc15',  // yellow    — radiological
+    7: '#3b82f6',  // blue      — tsunami
+    8: '#84cc16',  // lime      — hazardous materials
+  }
 
   // Live mode: set of currently-alerted zone names
   const liveZones    = new Set(currentAlerts.flatMap(a => a.cities ?? []))

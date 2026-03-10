@@ -12,7 +12,7 @@ const TZ_CITIES_URL    = v => `/tzevaadom-static/static/cities.json?v=${v}`
 const TZ_WS_MAX_RETRIES = 3
 
 const THREAT_TO_CAT = { 0: 1, 1: 1, 2: 3, 3: 4, 5: 2 }
-const CAT_TITLES    = { 1: 'ירי רקטות וטילים', 2: 'חדירת כלי טיס עויין', 3: 'חדירת מחבלים', 4: 'רעידת אדמה', 5: 'עדכון מידע' }
+const CAT_TITLES    = { 1: 'ירי רקטות וטילים', 2: 'חדירת כלי טיס עויין', 3: 'חדירת מחבלים', 4: 'רעידת אדמה', 5: 'התראה מקדימה', 6: 'אירוע רדיולוגי', 7: 'צונאמי', 8: 'אירוע חומרים מסוכנים' }
 
 let _cityLookup = null
 let _cityLookupPromise = null
@@ -75,9 +75,12 @@ const RA_APIKEY = import.meta.env.VITE_RA_APIKEY
 const RA_TYPE_TO_CAT = {
   missiles: 1, missile: 1, rockets: 1,
   hostileAircraftIntrusion: 2, uav: 2, UAV: 2, drone: 2,
-  infiltration: 3, terroristInfiltration: 3,
+  terroristInfiltration: 3, infiltration: 3,
   earthQuake: 4, earthquake: 4,
   newsFlash: 5,
+  radiologicalEvent: 6,
+  tsunami: 7,
+  hazardousMaterials: 8,
 }
 
 function parseRedAlertItem(ra) {
@@ -235,7 +238,7 @@ function buildHeatmap(history) {
 
 // ── Hook ───────────────────────────────────────────────────────────────────
 
-export function useAlerts({ source = 'oref' } = {}) {
+export function useAlerts({ source = 'oref', demoMode = false } = {}) {
   const [currentAlerts, setCurrentAlerts] = useState([])
   const [heatmapData,   setHeatmapData]   = useState({ cities: [], max_count: 0, total: 0, by_cat: {} })
   const [loading,       setLoading]       = useState(false)
@@ -252,8 +255,10 @@ export function useAlerts({ source = 'oref' } = {}) {
   // RedAlert refs
   const raSocketRef  = useRef(null)
   const raEnabledRef = useRef(false)
+  const demoModeRef  = useRef(demoMode)
 
   useEffect(() => { getCityLookup() }, [])
+  useEffect(() => { demoModeRef.current = demoMode }, [demoMode])
 
   // ── Tzevaadom ─────────────────────────────────────────────────────────────
 
@@ -333,7 +338,8 @@ export function useAlerts({ source = 'oref' } = {}) {
     // Seed active alerts from relay (if configured) before socket events arrive
     const relayUrl = import.meta.env.VITE_RA_RELAY_URL
     if (relayUrl) {
-      fetch(`${relayUrl}/active`, { cache: 'no-store' })
+      const relayEndpoint = demoModeRef.current ? 'demo' : 'active'
+      fetch(`${relayUrl}/${relayEndpoint}`, { cache: 'no-store' })
         .then(r => r.json())
         .then(data => {
           const parsed = (Array.isArray(data) ? data : []).map(parseRedAlertItem).filter(Boolean)
