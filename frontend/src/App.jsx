@@ -136,7 +136,7 @@ export default function App() {
 
 
       {/* ── Desktop Sidebar ─────────────────────────────────────────── */}
-      <aside className="hidden md:flex w-80 flex-col bg-slate-800 border-l border-slate-700 z-10 shrink-0">
+      <aside className="hidden md:flex w-80 flex-col bg-slate-800 border-l border-slate-700 z-10 shrink-0" style={{height:'100dvh',overflow:'hidden'}}>
 
         {/* Logo + Refresh */}
         <div className="flex items-center gap-3 px-4 py-4 border-b border-slate-700">
@@ -194,7 +194,7 @@ export default function App() {
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto">{renderSidebarContent()}</div>
+        <div style={{flex:'1 1 0',minHeight:0,overflowY:'auto'}}>{renderSidebarContent()}</div>
 
         {mode === 'history' && hasCustomFilters && (
           <div className="mx-4 mb-4 px-3 py-2 bg-blue-900/30 border border-blue-700
