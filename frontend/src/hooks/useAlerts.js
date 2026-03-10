@@ -1,76 +1,12 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
-import { io } from 'socket.io-client'
+import { useState, useCallback } from 'react'
 import { loadHistory, saveAlerts, clearHistory, historyCount } from '../utils/localHistory'
 import * as log from '../utils/logger'
 
-// ── Tzevaadom (live alerts — WebSocket + REST snapshot) ───────────────────
+// ── Live alerts — relay polling ────────────────────────────────────────────
 
-const TZ_WS            = 'wss://ws.tzevaadom.co.il:8443/socket?platform=WEB'
-const TZ_NOTIFICATIONS = '/tzevaadom/notifications'
-const TZ_VERSIONS_URL  = '/tzevaadom/lists-versions'
-const TZ_CITIES_URL    = v => `/tzevaadom-static/static/cities.json?v=${v}`
-const TZ_WS_MAX_RETRIES = 3
+const RELAY_URL = import.meta.env.VITE_RA_RELAY_URL
 
-const THREAT_TO_CAT = { 0: 1, 1: 1, 2: 3, 3: 4, 5: 2 }
-const CAT_TITLES    = { 1: 'ירי רקטות וטילים', 2: 'חדירת כלי טיס עויין', 3: 'חדירת מחבלים', 4: 'רעידת אדמה', 5: 'התראה מקדימה', 6: 'אירוע רדיולוגי', 7: 'צונאמי', 8: 'אירוע חומרים מסוכנים' }
-
-let _cityLookup = null
-let _cityLookupPromise = null
-
-async function getCityLookup() {
-  if (_cityLookup) return _cityLookup
-  if (!_cityLookupPromise) {
-    _cityLookupPromise = (async () => {
-      try {
-        const versionsData = await fetch(TZ_VERSIONS_URL).then(r => r.json())
-        const v = versionsData?.cities
-        if (!v) throw new Error('no cities version in response')
-        const citiesData = await fetch(TZ_CITIES_URL(v)).then(r => r.json())
-        const cities = citiesData?.cities
-        if (!Array.isArray(cities)) throw new Error(`cities is not an array: ${JSON.stringify(citiesData)?.slice(0, 80)}`)
-        const lookup = {}
-        for (const c of cities) lookup[c.value] = c.name
-        _cityLookup = lookup
-        log.success(`[tzevaadom] city lookup loaded: ${Object.keys(lookup).length} cities`)
-        return lookup
-      } catch (e) {
-        log.warn('[tzevaadom] city lookup failed, will retry on next alert', e.message)
-        _cityLookupPromise = null
-        _cityLookup = {}
-        return {}
-      }
-    })()
-  }
-  return _cityLookupPromise
-}
-
-function parseTzevaadomItem(item, lookup) {
-  const cities = (item.cities ?? []).map(id => lookup[id] ?? String(id)).filter(Boolean)
-  if (!cities.length) return null
-  const cat = THREAT_TO_CAT[item.threat ?? 0] ?? 1
-  return { id: String(item.id || Date.now()), cat, title: CAT_TITLES[cat] ?? 'התראה', cities }
-}
-
-async function fetchTzevaadomSnapshot() {
-  log.info('[fetch] tzevaadom snapshot →', TZ_NOTIFICATIONS)
-  const res = await fetch(TZ_NOTIFICATIONS, { cache: 'no-store' })
-  log.info(`[fetch] tzevaadom → HTTP ${res.status}`)
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const data = await res.json()
-  if (!Array.isArray(data) || !data.length) {
-    log.info('[fetch] tzevaadom → quiet (no active alerts)')
-    return []
-  }
-  const lookup = await getCityLookup()
-  const alerts = data.map(n => parseTzevaadomItem(n, lookup)).filter(Boolean)
-  if (alerts.length) log.success('[fetch] tzevaadom → active alerts', alerts)
-  return alerts
-}
-
-// ── RedAlert (Socket.IO) ──────────────────────────────────────────────────
-
-const RA_URL    = 'https://redalert.orielhaim.com'
-const RA_APIKEY = import.meta.env.VITE_RA_APIKEY
+const CAT_TITLES = { 1: 'ירי רקטות וטילים', 2: 'חדירת כלי טיס עויין', 3: 'חדירת מחבלים', 4: 'רעידת אדמה', 5: 'התראה מקדימה', 6: 'אירוע רדיולוגי', 7: 'צונאמי', 8: 'אירוע חומרים מסוכנים' }
 
 const RA_TYPE_TO_CAT = {
   missiles: 1, missile: 1, rockets: 1,
@@ -83,12 +19,12 @@ const RA_TYPE_TO_CAT = {
   hazardousMaterials: 8,
 }
 
-function parseRedAlertItem(ra) {
-  const cat = RA_TYPE_TO_CAT[ra.type]
-  if (!cat) return null  // skip newsFlash, endAlert, unknown types
-  const cities = Array.isArray(ra.cities) ? ra.cities.filter(Boolean) : []
+function parseRelayItem(item) {
+  const cat = RA_TYPE_TO_CAT[item.type]
+  if (!cat) return null
+  const cities = Array.isArray(item.cities) ? item.cities.filter(Boolean) : []
   if (!cities.length) return null
-  return { id: `ra-${ra.type}`, cat, title: ra.title || CAT_TITLES[cat] || 'התראה', cities }
+  return { id: `ra-${item.type}`, cat, title: item.title || CAT_TITLES[cat] || 'התראה', cities }
 }
 
 // ── History ────────────────────────────────────────────────────────────────
@@ -246,199 +182,23 @@ export function useAlerts({ source = 'oref', demoMode = false } = {}) {
   const [lastRefresh,   setLastRefresh]   = useState(null)
   const [storedCount,   setStoredCount]   = useState(historyCount)
 
-  // Tzevaadom refs
-  const wsRef        = useRef(null)
-  const reconnectRef = useRef(null)
-  const wsEnabledRef = useRef(false)
-  const wsRetriesRef = useRef(0)
-
-  // RedAlert refs
-  const raSocketRef  = useRef(null)
-  const raEnabledRef = useRef(false)
-  const demoModeRef  = useRef(demoMode)
-
-  useEffect(() => { getCityLookup() }, [])
-  useEffect(() => { demoModeRef.current = demoMode }, [demoMode])
-
-  // ── Tzevaadom ─────────────────────────────────────────────────────────────
-
-  const connectTzevaadom = useCallback(() => {
-    if (!wsEnabledRef.current) wsRetriesRef.current = 0
-    wsEnabledRef.current = true
-    clearTimeout(reconnectRef.current)
-
-    if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) return
-
-    log.info('[ws] connecting to tzevaadom...')
-    const ws = new WebSocket(TZ_WS)
-    wsRef.current = ws
-
-    ws.onopen = () => { wsRetriesRef.current = 0; log.success('[ws] connected — live alerts active') }
-
-    ws.onmessage = async (e) => {
-      try {
-        const msg = JSON.parse(e.data)
-        log.info('[ws] message', msg.type, msg.data)
-
-        if (msg.type === 'ALERT') {
-          const lookup = await getCityLookup()
-          const alert  = parseTzevaadomItem(msg.data ?? {}, lookup)
-          if (alert) {
-            saveAlerts([alert])
-            setCurrentAlerts(prev => {
-              const without = prev.filter(a => a.id !== alert.id)
-              return [...without, alert]
-            })
-            setStoredCount(historyCount())
-          }
-        } else {
-          log.info('[ws] alert ended — refreshing live state from REST')
-          fetchTzevaadomSnapshot()
-            .then(alerts => { setCurrentAlerts(alerts); setLastRefresh(new Date()) })
-            .catch(err => { log.warn('[ws] post-exit refresh failed', err.message); setCurrentAlerts([]) })
-          return
-        }
-        setLastRefresh(new Date())
-      } catch (err) {
-        log.warn('[ws] message parse error', err.message)
-      }
-    }
-
-    ws.onerror = () => log.error('[ws] connection error')
-
-    ws.onclose = (e) => {
-      log.warn(`[ws] closed (code ${e.code})`)
-      if (wsEnabledRef.current) {
-        wsRetriesRef.current += 1
-        if (wsRetriesRef.current <= TZ_WS_MAX_RETRIES) {
-          log.info(`[ws] reconnecting in 5s... (attempt ${wsRetriesRef.current}/${TZ_WS_MAX_RETRIES})`)
-          reconnectRef.current = setTimeout(connectTzevaadom, 5000)
-        } else {
-          log.warn('[ws] max retries reached — WebSocket unavailable, relying on REST polling')
-        }
-      }
-    }
-  }, [])
-
-  const disconnectTzevaadom = useCallback(() => {
-    wsEnabledRef.current = false
-    wsRetriesRef.current = 0
-    clearTimeout(reconnectRef.current)
-    const ws = wsRef.current
-    wsRef.current = null
-    if (ws) { ws.onclose = null; ws.close(); log.info('[ws] disconnected') }
-  }, [])
-
-  // ── RedAlert ─────────────────────────────────────────────────────────────
-
-  const connectRedAlert = useCallback(() => {
-    raEnabledRef.current = true
-    if (raSocketRef.current?.connected) return
-
-    // Seed active alerts from relay (if configured) before socket events arrive
-    const relayUrl = import.meta.env.VITE_RA_RELAY_URL
-    if (relayUrl) {
-      const relayEndpoint = demoModeRef.current ? 'demo' : 'active'
-      fetch(`${relayUrl}/${relayEndpoint}`, { cache: 'no-store' })
-        .then(r => r.json())
-        .then(data => {
-          const parsed = (Array.isArray(data) ? data : []).map(parseRedAlertItem).filter(Boolean)
-          if (parsed.length) {
-            log.success(`[relay] seeded ${parsed.length} active alert type(s) from relay`, parsed)
-            setCurrentAlerts(prev => {
-              const byId = Object.fromEntries(prev.map(a => [a.id, a]))
-              for (const a of parsed) byId[a.id] = a
-              return Object.values(byId)
-            })
-            setLastRefresh(new Date())
-          } else {
-            log.info('[relay] no active alerts at startup')
-          }
-        })
-        .catch(e => log.warn('[relay] could not reach relay, falling back to socket-only:', e.message))
-    }
-
-    log.info('[redalert] connecting...')
-    const socket = io(RA_URL, {
-      auth: { apiKey: RA_APIKEY },
-      transports: ['websocket'],
-      reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 5000,
-    })
-    raSocketRef.current = socket
-
-    socket.on('connect', () => {
-      log.success('[redalert] connected')
-      setLastRefresh(new Date())
-    })
-
-    socket.on('alert', (alerts) => {
-      log.info('[redalert] alert event', alerts)
-      const parsed = (Array.isArray(alerts) ? alerts : [alerts]).map(parseRedAlertItem).filter(Boolean)
-      if (parsed.length) {
-        // Save only real alerts (cat 1-4), not newsFlash
-        const toSave = parsed.filter(a => a.cat !== 5)
-        if (toSave.length) { saveAlerts(toSave); setStoredCount(historyCount()) }
-        // Merge into existing currentAlerts by ID (preserves other active alert types)
-        setCurrentAlerts(prev => {
-          const byId = Object.fromEntries(prev.map(a => [a.id, a]))
-          for (const a of parsed) byId[a.id] = a
-          return Object.values(byId)
-        })
-      }
-      setLastRefresh(new Date())
-    })
-
-    socket.on('endAlert', (alert) => {
-      log.info('[redalert] endAlert event', alert)
-      const type = alert?.type
-      setCurrentAlerts(prev => type ? prev.filter(a => a.id !== `ra-${type}`) : [])
-      setLastRefresh(new Date())
-    })
-
-    socket.on('disconnect', (reason) => log.warn('[redalert] disconnected:', reason))
-    socket.on('connect_error', (err) => log.error('[redalert] connection error:', err.message))
-  }, [])
-
-  const disconnectRedAlert = useCallback(() => {
-    raEnabledRef.current = false
-    const s = raSocketRef.current
-    raSocketRef.current = null
-    if (s) { s.disconnect(); log.info('[redalert] disconnected') }
-  }, [])
-
-  // ── Unified connect / disconnect ─────────────────────────────────────────
-
-  const connectWebSocket = useCallback(() => {
-    if (source === 'redalert') {
-      disconnectTzevaadom()
-      connectRedAlert()
-    } else {
-      disconnectRedAlert()
-      connectTzevaadom()
-    }
-  }, [source, connectTzevaadom, disconnectTzevaadom, connectRedAlert, disconnectRedAlert])
-
-  const disconnectWebSocket = useCallback(() => {
-    disconnectTzevaadom()
-    disconnectRedAlert()
-  }, [disconnectTzevaadom, disconnectRedAlert])
-
-  // ── Snapshot (tzevaadom only; RedAlert is push-only) ─────────────────────
+  // ── Live: poll relay /active every 5s ─────────────────────────────────────
 
   const refreshLive = useCallback(async () => {
-    if (source === 'redalert') return   // push-only — nothing to poll
+    if (!RELAY_URL) { log.warn('[live] VITE_RA_RELAY_URL not configured'); return }
+    const endpoint = demoMode ? 'demo' : 'active'
     try {
-      const alerts = await fetchTzevaadomSnapshot()
-      if (alerts.length) saveAlerts(alerts)
+      const res = await fetch(`${RELAY_URL}/${endpoint}`, { cache: 'no-store' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      const alerts = (Array.isArray(data) ? data : []).map(parseRelayItem).filter(Boolean)
       setCurrentAlerts(alerts)
       setLastRefresh(new Date())
-      setStoredCount(historyCount())
+      log.info(`[live] relay /${endpoint} → ${alerts.length} active alert(s)`)
     } catch (e) {
-      log.warn('[refreshLive] snapshot failed', e.message)
+      log.warn('[live] relay fetch failed', e.message)
     }
-  }, [source])
+  }, [demoMode])
 
   // ── Full history refresh ──────────────────────────────────────────────────
 
@@ -448,8 +208,6 @@ export function useAlerts({ source = 'oref', demoMode = false } = {}) {
     log.info('──── refresh started ────', { source, categories, from: from?.toISOString(), to: to?.toISOString() })
 
     try {
-      let history = []
-
       if (source === 'redalert') {
         // RedAlert: use pre-aggregated stats APIs (fast — 2 requests total)
         const heatmap = await fetchRedAlertHeatmap(from, to)
@@ -509,6 +267,5 @@ export function useAlerts({ source = 'oref', demoMode = false } = {}) {
   return {
     currentAlerts, heatmapData, storedCount, loading, error, lastRefresh,
     refresh, refreshLive, wipeHistory,
-    connectWebSocket, disconnectWebSocket,
   }
 }

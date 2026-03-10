@@ -68,7 +68,7 @@ export default function App() {
   const [demoMode,        setDemoMode]        = useState(false)
   const debugTapRef = useRef({ count: 0, timer: null })
 
-  const { currentAlerts, heatmapData, storedCount, loading, error, lastRefresh, refresh, refreshLive, wipeHistory, connectWebSocket, disconnectWebSocket } = useAlerts({ source: alertsSource, demoMode })
+  const { currentAlerts, heatmapData, storedCount, loading, error, lastRefresh, refresh, refreshLive, wipeHistory } = useAlerts({ source: alertsSource, demoMode })
 
   // Toggle debug with backtick key (works on desktop + physical keyboards on mobile)
   useEffect(() => {
@@ -93,15 +93,14 @@ export default function App() {
   // Initial load
   useEffect(() => { refresh(filters) }, []) // eslint-disable-line
 
-  // Live mode: WebSocket for push + REST polling every 10s as fallback
-  // Re-runs when demoMode changes so the relay seed endpoint is refreshed
+  // Live mode: poll relay /active every 5s
+  // refreshLive dep covers demoMode changes (it's in useCallback deps)
   useEffect(() => {
-    if (mode !== 'live') { disconnectWebSocket(); return }
+    if (mode !== 'live') return
     refreshLive()
-    connectWebSocket()
-    const pollId = setInterval(refreshLive, 10_000)
-    return () => { disconnectWebSocket(); clearInterval(pollId) }
-  }, [mode, demoMode, connectWebSocket, disconnectWebSocket, refreshLive])
+    const pollId = setInterval(refreshLive, 5_000)
+    return () => clearInterval(pollId)
+  }, [mode, refreshLive])
 
   const handleRefresh = () => mode === 'live' ? refreshLive() : refresh(filters)
   const handleFilterChange = (next) => { setFilters(next); refresh(next) }
@@ -227,8 +226,10 @@ export default function App() {
               <Shield size={13} className={visibleAlerts.length > 0 ? 'text-red-400' : 'text-green-400'} />
               <span className="text-xs text-slate-300 truncate">
                 {visibleAlerts.length > 0
-                  ? `${visibleAlerts.length} התראה פעילה`
-                  : lastRefresh ? `עודכן ${formatTime(lastRefresh)}` : 'מפת התראות ישראל'}
+                  ? `${visibleAlerts.length} התראה פעילה${lastRefresh ? ` · ${formatTime(lastRefresh)}` : ''}`
+                  : mode === 'live'
+                    ? `שקט — אין התראות פעילות${lastRefresh ? ` · ${formatTime(lastRefresh)}` : ''}`
+                    : lastRefresh ? `עודכן ${formatTime(lastRefresh)}` : 'מפת התראות ישראל'}
               </span>
             </div>
             <button

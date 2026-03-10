@@ -1,0 +1,26 @@
+properties:
+  configuration:
+    secrets:
+      - name: ra-apikey
+        value: "CqfarpQQEpiQrskKallxRXJKnbuGUywXeVgafWGkTCWbaAGsJzeltxtzuMNrjFVo"
+  template:
+    revisionSuffix: fix-endalert
+    containers:
+      - name: redalert-relay
+        image: redalertrelay.azurecr.io/redalert-relay:latest
+        resources:
+          cpu: 0.5
+          memory: 1Gi
+        env:
+          - name: RA_APIKEY
+            secretRef: ra-apikey
+        volumeMounts:
+          - volumeName: relay-data
+            mountPath: /data
+    volumes:
+      - name: relay-data
+        storageType: AzureFile
+        storageName: relay-data
+    scale:
+      minReplicas: 1
+      maxReplicas: 1

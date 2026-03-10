@@ -109,7 +109,7 @@ export default function SettingsPanel({
                 <div>מצב דמו</div>
                 <div className="text-xs text-slate-500 mt-0.5">מציג התראות לדוגמה במקום חי</div>
               </div>
-              <div className={`w-9 h-5 rounded-full border transition-colors shrink-0 mr-2 flex items-center px-0.5
+              <div dir="ltr" className={`w-9 h-5 rounded-full border transition-colors shrink-0 mr-2 flex items-center px-0.5
                 ${demoMode ? 'bg-amber-500 border-amber-400' : 'bg-slate-600 border-slate-500'}`}>
                 <div className={`w-4 h-4 rounded-full bg-white shadow transition-transform
                   ${demoMode ? 'translate-x-4' : 'translate-x-0'}`} />

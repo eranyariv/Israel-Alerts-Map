@@ -74,7 +74,7 @@ export default function LivePanel({ currentAlerts, lastRefresh, loading, onAreaC
       })}
 
       <p className="text-xs text-slate-500 text-center pt-1">
-        מתרענן אוטומטית כל 10 שניות
+        מתרענן אוטומטית כל 5 שניות
       </p>
     </div>
   )
