@@ -4,7 +4,7 @@ An interactive heatmap of Israeli Home Front Command (Pikud HaOref) alerts, buil
 
 **Live site:** [yariv.org/map](https://yariv.org/map/)
 
-![Map screenshot showing alert heatmap over Israel](https://raw.githubusercontent.com/eranyariv/Israel-Alerts-Map/main/docs/screenshot.png)
+![Map screenshot showing alert heatmap over Israel](https://raw.githubusercontent.com/eranyariv/Israel-Alerts-Map/main/docs/screenshot.jpg)
 
 ---
 
