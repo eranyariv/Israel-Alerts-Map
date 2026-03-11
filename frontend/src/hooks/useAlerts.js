@@ -1,10 +1,13 @@
-import { useState, useCallback } from 'react'
-import { loadHistory, saveAlerts, clearHistory, historyCount } from '../utils/localHistory'
+import { useState, useCallback, useEffect } from 'react'
+import { io } from 'socket.io-client'
+import { loadHistory, clearHistory, historyCount } from '../utils/localHistory'
 import * as log from '../utils/logger'
 
-// ── Live alerts — relay polling ────────────────────────────────────────────
+// ── Constants ──────────────────────────────────────────────────────────────
 
-const RELAY_URL = import.meta.env.VITE_RA_RELAY_URL
+const RA_URL    = 'https://redalert.orielhaim.com'
+const RA_APIKEY = import.meta.env.VITE_RA_APIKEY
+const RELAY_URL = import.meta.env.VITE_RA_RELAY_URL  // demo mode only
 
 const CAT_TITLES = { 1: 'ירי רקטות וטילים', 2: 'חדירת כלי טיס עויין', 3: 'חדירת מחבלים', 4: 'רעידת אדמה', 5: 'התראה מקדימה', 6: 'אירוע רדיולוגי', 7: 'צונאמי', 8: 'אירוע חומרים מסוכנים' }
 
@@ -19,24 +22,37 @@ const RA_TYPE_TO_CAT = {
   hazardousMaterials: 8,
 }
 
-function parseRelayItem(item) {
-  const cat = RA_TYPE_TO_CAT[item.type]
+// ── Parsers ────────────────────────────────────────────────────────────────
+
+// Parse /api/active { type: [cities] } → internal alert array
+function parseApiActive(data) {
+  if (!data || typeof data !== 'object') return []
+  return Object.entries(data).flatMap(([type, cities]) => {
+    const cat = RA_TYPE_TO_CAT[type]
+    if (!cat) return []
+    const c = Array.isArray(cities) ? cities.filter(Boolean) : []
+    if (!c.length) return []
+    return [{ id: `ra-${type}`, cat, title: CAT_TITLES[cat] || 'התראה', cities: c }]
+  })
+}
+
+// Parse a socket alert event item → internal alert (null if invalid)
+function parseAlertItem(item) {
+  const cat = RA_TYPE_TO_CAT[item?.type]
   if (!cat) return null
   const cities = Array.isArray(item.cities) ? item.cities.filter(Boolean) : []
   if (!cities.length) return null
   return { id: `ra-${item.type}`, cat, title: item.title || CAT_TITLES[cat] || 'התראה', cities }
 }
 
-// ── History ────────────────────────────────────────────────────────────────
+// ── History helpers ────────────────────────────────────────────────────────
 
 const CAT_NORMALIZE = { 10: 1, 11: 2, 12: 3 }
 
-// In dev: Vite proxy /redalert-api/ → redalert.orielhaim.com (injects auth header)
-// In prod: PHP proxy ra-proxy.php?_path=... (same-origin, no CORS issue)
 const IS_DEV = import.meta.env.DEV
 
-// 60-second response cache to avoid rate-limit throttling (server returns 401 when exceeded)
-const _raCache = new Map()   // url → { data, expiresAt }
+// 60-second response cache to avoid rate-limit throttling
+const _raCache = new Map()
 const RA_CACHE_TTL = 60_000
 
 async function raFetch(path, params = {}) {
@@ -62,7 +78,6 @@ async function raFetch(path, params = {}) {
   return data
 }
 
-// The 4 real alert categories in the RedAlert API
 const RA_HISTORY_CATEGORIES = ['missiles', 'hostileAircraftIntrusion', 'terroristInfiltration', 'earthQuake']
 
 async function fetchRedAlertCategoryHistory(category, dateParams) {
@@ -93,7 +108,6 @@ async function fetchRedAlertHeatmap(from, to) {
   if (from) dateParams.startDate = from.toISOString()
   if (to)   { const end = new Date(to); end.setHours(23, 59, 59, 999); dateParams.endDate = end.toISOString() }
 
-  // Fetch all 4 categories in parallel, each paginated to completion
   const results = await Promise.all(
     RA_HISTORY_CATEGORIES.map(cat =>
       fetchRedAlertCategoryHistory(cat, dateParams).catch(e => {
@@ -104,10 +118,7 @@ async function fetchRedAlertHeatmap(from, to) {
   )
   const allAlerts = results.flat()
 
-  // RedAlert stores one record per city per alert event, staggered by seconds.
-  // Merge records within a 4-minute window per category into one event.
   const MERGE_WINDOW_MS = 4 * 60 * 1000
-
   const byCat = {}
   for (const alert of allAlerts) {
     ;(byCat[alert.cat] ??= []).push(alert)
@@ -181,41 +192,101 @@ export function useAlerts({ source = 'oref', demoMode = false } = {}) {
   const [error,         setError]         = useState(null)
   const [lastRefresh,   setLastRefresh]   = useState(null)
   const [storedCount,   setStoredCount]   = useState(historyCount)
-  const [relayHealth,   setRelayHealth]   = useState(null) // null=unknown, {reachable,connected}
+  const [wsConnected,   setWsConnected]   = useState(null) // null=connecting, true, false
 
-  // ── Live: poll relay /active + /health every 5s ────────────────────────────
+  // ── Live: WebSocket + /api/active seed on connect ─────────────────────────
 
-  const refreshLive = useCallback(async () => {
-    if (!RELAY_URL) { log.warn('[live] VITE_RA_RELAY_URL not configured'); return }
-    const endpoint = demoMode ? 'demo' : 'active'
-    const [alertsResult, healthResult] = await Promise.allSettled([
-      fetch(`${RELAY_URL}/${endpoint}`, { cache: 'no-store' }),
-      fetch(`${RELAY_URL}/health`,      { cache: 'no-store' }),
-    ])
-
-    // Process /active
-    if (alertsResult.status === 'fulfilled' && alertsResult.value.ok) {
-      try {
-        const data   = await alertsResult.value.json()
-        const alerts = (Array.isArray(data) ? data : []).map(parseRelayItem).filter(Boolean)
-        setCurrentAlerts(alerts)
-        setLastRefresh(new Date())
-        log.info(`[live] relay /${endpoint} → ${alerts.length} active alert(s)`)
-      } catch (e) { log.warn('[live] relay parse failed', e.message) }
-    } else {
-      log.warn('[live] relay /active fetch failed', alertsResult.reason?.message)
+  useEffect(() => {
+    // Demo mode: fetch static sample from relay once, no WebSocket needed
+    if (demoMode) {
+      if (!RELAY_URL) return
+      fetch(`${RELAY_URL}/demo`, { cache: 'no-store' })
+        .then(r => r.json())
+        .then(data => {
+          setCurrentAlerts((Array.isArray(data) ? data : []).map(parseAlertItem).filter(Boolean))
+          setLastRefresh(new Date())
+        })
+        .catch(e => log.warn('[demo] fetch failed', e.message))
+      return
     }
 
-    // Process /health
-    if (healthResult.status === 'fulfilled' && healthResult.value.ok) {
+    if (!RA_APIKEY) { log.warn('[ws] VITE_RA_APIKEY not configured'); return }
+
+    const socket = io(RA_URL, {
+      auth:                 { apiKey: RA_APIKEY },
+      extraHeaders:         { 'x-api-key': RA_APIKEY },
+      transports:           ['websocket'],
+      reconnection:         true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay:    5000,
+    })
+
+    socket.on('connect', async () => {
+      setWsConnected(true)
+      log.info('[ws] connected — seeding from /api/active')
       try {
-        const h = await healthResult.value.json()
-        setRelayHealth({ reachable: true, connected: h.ok === true })
-        log.info(`[live] relay /health → reachable=true connected=${h.ok}`)
-      } catch (e) { setRelayHealth({ reachable: true, connected: false }) }
-    } else {
-      setRelayHealth({ reachable: false, connected: false })
-      log.warn('[live] relay /health fetch failed')
+        const data = await raFetch('/api/active')
+        setCurrentAlerts(parseApiActive(data))
+        setLastRefresh(new Date())
+        const types = Object.keys(data || {})
+        log.success(`[ws] seeded — ${types.length ? types.join(', ') : 'quiet'}`)
+      } catch (e) {
+        log.warn('[ws] /api/active seed failed', e.message)
+      }
+    })
+
+    socket.on('disconnect', (reason) => {
+      setWsConnected(false)
+      log.warn('[ws] disconnected:', reason)
+      if (reason === 'io server disconnect') {
+        log.info('[ws] server-initiated disconnect — reconnecting in 5s...')
+        setTimeout(() => socket.connect(), 5000)
+      }
+    })
+
+    socket.on('connect_error', (err) => {
+      setWsConnected(false)
+      log.warn('[ws] connect_error:', err.message)
+    })
+
+    socket.on('alert', (payload) => {
+      const list = Array.isArray(payload) ? payload : [payload]
+      setCurrentAlerts(prev => {
+        const map = new Map(prev.map(a => [a.id, a]))
+        for (const a of list) {
+          if (!a?.type || a.type === 'endAlert') continue
+          const cat = RA_TYPE_TO_CAT[a.type]
+          if (!cat) continue
+          const cities = Array.isArray(a.cities) ? a.cities.filter(Boolean) : []
+          if (!cities.length) continue
+          const id = `ra-${a.type}`
+          if (map.has(id)) {
+            const ex = map.get(id)
+            const merged = [...ex.cities]
+            for (const c of cities) if (!merged.includes(c)) merged.push(c)
+            map.set(id, { ...ex, cities: merged })
+          } else {
+            map.set(id, { id, cat, title: a.title || CAT_TITLES[cat] || 'התראה', cities })
+          }
+        }
+        return [...map.values()]
+      })
+      setLastRefresh(new Date())
+      log.info('[ws] alert —', list.map(a => a?.type).filter(Boolean).join(', '))
+    })
+
+    socket.on('endAlert', (payload) => {
+      const type = payload?.type
+      setCurrentAlerts(prev =>
+        (type && type !== 'endAlert') ? prev.filter(a => a.id !== `ra-${type}`) : []
+      )
+      setLastRefresh(new Date())
+      log.info('[ws] endAlert —', type ?? 'all')
+    })
+
+    return () => {
+      socket.disconnect()
+      setWsConnected(false)
     }
   }, [demoMode])
 
@@ -228,11 +299,9 @@ export function useAlerts({ source = 'oref', demoMode = false } = {}) {
 
     try {
       if (source === 'redalert') {
-        // RedAlert: use pre-aggregated stats APIs (fast — 2 requests total)
         const heatmap = await fetchRedAlertHeatmap(from, to)
         setHeatmapData(heatmap)
       } else {
-        // Static archive + localStorage — build heatmap locally
         const staticRaw = await fetchStaticHistory().catch(e => { log.error('[fetch] static archive threw', e.message); return null })
 
         let baseAlerts = []
@@ -285,6 +354,6 @@ export function useAlerts({ source = 'oref', demoMode = false } = {}) {
 
   return {
     currentAlerts, heatmapData, storedCount, loading, error, lastRefresh,
-    refresh, refreshLive, wipeHistory, relayHealth,
+    refresh, wipeHistory, wsConnected,
   }
 }

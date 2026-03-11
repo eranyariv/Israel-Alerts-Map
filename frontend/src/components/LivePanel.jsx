@@ -54,7 +54,7 @@ export default function LivePanel({ currentAlerts, lastRefresh, loading, onAreaC
             </span>
           </div>
           {alert.cities?.length > 0 && (
-            <div className="space-y-1 pr-1">
+            <div className="space-y-1 pr-1 overflow-y-auto" style={{ maxHeight: '40vh' }}>
               {alert.cities.map(city => (
                 <div key={city} className="flex items-center gap-2 text-xs">
                   <MapPin size={10} className="text-slate-500 shrink-0" />
@@ -73,9 +73,6 @@ export default function LivePanel({ currentAlerts, lastRefresh, loading, onAreaC
         )
       })}
 
-      <p className="text-xs text-slate-500 text-center pt-1">
-        מתרענן אוטומטית כל 5 שניות
-      </p>
     </div>
   )
 }

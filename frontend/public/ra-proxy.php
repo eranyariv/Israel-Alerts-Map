@@ -1,11 +1,11 @@
 <?php
-$APIKEY  = 'pr_HllnocGJaCSjPQEzhzNYTmXYNVfNfoWXceDCpeauWEjmjJJmneJpcNBVCAtLTLbo';
+$APIKEY  = 'pr_MOWrCRNqKRojDStFFrUMPfHtOChYhoQkgDiwMnnJqEtwOLCJXBbMlBimmENyjjmf';
 $RA_BASE = 'https://redalert.orielhaim.com';
 
 header('Content-Type: application/json; charset=utf-8');
 
 $path = $_GET['_path'] ?? '';
-if (!preg_match('#^/api/stats/(history|cities|distribution|summary)$#', $path)) {
+if (!preg_match('#^/api/(active|stats/(history|cities|distribution|summary))$#', $path)) {
     http_response_code(400);
     echo '{"error":"invalid path"}';
     exit;

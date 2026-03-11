@@ -6,7 +6,7 @@ import { VERSION } from '../version'
 const SITE_URL = 'https://yariv.org/map/'
 
 const ALERT_SOURCES = [
-  { id: 'oref',     label: 'פיקוד העורף',  desc: 'מקור ברירת מחדל' },
+  { id: 'oref',     label: 'פיקוד העורף',  desc: 'מקור ברירת מחדל', disabled: true },
   { id: 'redalert', label: 'Red Alert API', desc: 'redalert.orielhaim.com' },
 ]
 
@@ -19,23 +19,29 @@ function Section({ title, children }) {
   )
 }
 
-function OptionRow({ label, desc, selected, onClick }) {
+function OptionRow({ label, desc, selected, onClick, disabled }) {
   return (
     <button
-      onClick={onClick}
-      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border transition-colors text-sm
-        ${selected
-          ? 'bg-blue-600/20 border-blue-500/60 text-white'
-          : 'bg-slate-700/30 border-slate-700/50 text-slate-300 hover:bg-slate-700/60 hover:text-white'
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-sm
+        ${disabled
+          ? 'opacity-40 cursor-not-allowed bg-slate-700/20 border-slate-700/30 text-slate-500'
+          : selected
+            ? 'bg-blue-600/20 border-blue-500/60 text-white transition-colors'
+            : 'bg-slate-700/30 border-slate-700/50 text-slate-300 hover:bg-slate-700/60 hover:text-white transition-colors'
         }`}
     >
-      <div className="text-right">
-        <div>{label}</div>
-        {desc && <div className="text-xs text-slate-500 mt-0.5">{desc}</div>}
+      <div className="text-right flex items-center gap-2">
+        <div>
+          <div>{label}</div>
+          {desc && <div className="text-xs text-slate-500 mt-0.5">{desc}</div>}
+        </div>
+        {disabled && <span className="text-[10px] bg-slate-600/50 text-slate-400 px-1.5 py-0.5 rounded">בקרוב</span>}
       </div>
       <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 mr-2
-        ${selected ? 'border-blue-400' : 'border-slate-500'}`}>
-        {selected && <div className="w-2 h-2 rounded-full bg-blue-400" />}
+        ${selected && !disabled ? 'border-blue-400' : 'border-slate-600'}`}>
+        {selected && !disabled && <div className="w-2 h-2 rounded-full bg-blue-400" />}
       </div>
     </button>
   )
@@ -90,6 +96,7 @@ export default function SettingsPanel({
                 desc={src.desc}
                 selected={alertsSource === src.id}
                 onClick={() => onAlertsSourceChange(src.id)}
+                disabled={src.disabled}
               />
             ))}
 

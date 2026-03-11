@@ -707,6 +707,12 @@ app.get('/demo', (req, res) => {
   ])
 })
 
+// History as JSON
+app.get('/history.json', (req, res) => {
+  pruneHistory()
+  res.json([...alertHistory].reverse())
+})
+
 // Health / status endpoint
 app.get('/health', (req, res) => {
   const connected = socket.connected
