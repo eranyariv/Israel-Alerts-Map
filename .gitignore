@@ -8,3 +8,4 @@ Thumbs.db
 alarms.csv
 *.docx
 deploy/israel-alerts/
+deploy/.env.deploy

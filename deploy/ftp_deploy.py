@@ -7,10 +7,14 @@ import os
 import mimetypes
 from pathlib import Path
 
-FTP_HOST = '50.6.34.78'
-FTP_USER = 'wnuonimy'
-FTP_PASS = 'sgFccK6WmIBtrGgT'
-FTP_PORT = 21
+FTP_HOST = os.environ.get('FTP_HOST', '')
+FTP_USER = os.environ.get('FTP_USER', '')
+FTP_PASS = os.environ.get('FTP_PASS', '')
+FTP_PORT = int(os.environ.get('FTP_PORT', '21'))
+
+if not all([FTP_HOST, FTP_USER, FTP_PASS]):
+    raise RuntimeError('FTP_HOST, FTP_USER and FTP_PASS must be set as environment variables. '
+                       'For local use, copy deploy/.env.deploy.example to deploy/.env.deploy and fill it in.')
 
 FRONTEND_DIST = Path(__file__).parent.parent / 'frontend' / 'dist'
 DEPLOY_DIR    = Path(__file__).parent
