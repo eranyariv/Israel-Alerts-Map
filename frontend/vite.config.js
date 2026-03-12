@@ -1,4 +1,4 @@
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 const OREF_HEADERS = {
@@ -9,8 +9,7 @@ const OREF_HEADERS = {
   'Accept-Language': 'he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7',
 }
 
-export default defineConfig(({ mode }) => {
-const env = loadEnv(mode, process.cwd(), '')
+export default defineConfig(() => {
 return {
   plugins: [react()],
   base: '/map/',
@@ -56,14 +55,6 @@ return {
         secure: false,
         rewrite: path => path.replace(/^\/tzevaadom-static/, ''),
         headers: { 'Origin': 'https://www.tzevaadom.co.il', 'Referer': 'https://www.tzevaadom.co.il/' },
-      },
-      // RedAlert REST API proxy (dev only — production uses ra-proxy.php)
-      '/redalert-api': {
-        target: 'https://redalert.orielhaim.com',
-        changeOrigin: true,
-        secure: true,
-        rewrite: path => path.replace(/^\/redalert-api/, ''),
-        headers: { 'X-API-Key': env.VITE_RA_APIKEY, 'Authorization': `Bearer ${env.VITE_RA_APIKEY}` },
       },
     },
   },

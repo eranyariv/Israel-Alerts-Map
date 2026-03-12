@@ -1,4 +1,4 @@
-import { Activity, MapPin, Database, Trash2, TrendingUp, TrendingDown, Calendar } from 'lucide-react'
+import { Activity, MapPin, TrendingUp, TrendingDown, Calendar } from 'lucide-react'
 import { CATEGORY_COLORS, CATEGORY_LABELS } from '../utils/heatmap'
 import { format } from 'date-fns'
 import { he } from 'date-fns/locale'
@@ -44,7 +44,7 @@ function CityRow({ rank, city, count, maxCount, barColor, onAreaClick }) {
   )
 }
 
-export default function StatsPanel({ heatmapData, storedCount, onClearHistory, loading, filters, onAreaClick }) {
+export default function StatsPanel({ heatmapData, loading, filters, onAreaClick }) {
   if (loading) {
     return (
       <div className="p-4 space-y-2">
@@ -94,26 +94,6 @@ export default function StatsPanel({ heatmapData, storedCount, onClearHistory, l
             {formatDate(fromDate)} – {formatDate(toDate)}
           </div>
         </div>
-      </div>
-
-      {/* Local history storage indicator */}
-      <div className="bg-slate-700/40 rounded-xl p-3 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Database size={15} className="text-slate-400 shrink-0" />
-          <div>
-            <div className="text-xs text-slate-400">התראות שמורות מקומית</div>
-            <div className="text-sm font-semibold text-white">{storedCount ?? 0}</div>
-          </div>
-        </div>
-        {storedCount > 0 && (
-          <button
-            onClick={onClearHistory}
-            className="p-1.5 rounded-lg hover:bg-slate-600 transition-colors text-slate-500 hover:text-red-400"
-            title="מחק היסטוריה"
-          >
-            <Trash2 size={14} />
-          </button>
-        )}
       </div>
 
       {total === 0 ? (

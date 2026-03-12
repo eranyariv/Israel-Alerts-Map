@@ -1,7 +1,7 @@
 {
   "name": "israel-resilience-map",
   "private": true,
-  "version": "1.71",
+  "version": "1.74",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,8 +14,7 @@
     "lucide-react": "^0.400.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-leaflet": "^4.2.1",
-    "socket.io-client": "^4.8.3"
+    "react-leaflet": "^4.2.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",

@@ -1,5 +1,5 @@
 import { Filter, RotateCcw } from 'lucide-react'
-import { ALL_FILTER_TYPES, CATEGORY_COLORS } from '../utils/heatmap'
+import { ALL_FILTER_TYPES, ALL_CATEGORIES, CATEGORY_COLORS } from '../utils/heatmap'
 
 const TODAY = new Date().toISOString().slice(0, 10)
 
@@ -33,7 +33,7 @@ export default function FilterPanel({ categories, from, to, onChange }) {
   const defaultFrom = () => { const d = new Date(); d.setMonth(d.getMonth() - 3); return d }
   const defaultTo   = () => new Date()
 
-  const reset = () => onChange({ categories: [1, 2, 3, 4], from: defaultFrom(), to: defaultTo() })
+  const reset = () => onChange({ categories: ALL_CATEGORIES, from: defaultFrom(), to: defaultTo() })
 
   const applyConflict = (e) => {
     const idx = e.target.value
@@ -44,7 +44,7 @@ export default function FilterPanel({ categories, from, to, onChange }) {
   }
 
   const isDefault =
-    categories.length === 4 &&
+    categories.length === ALL_CATEGORIES.length &&
     toInputDate(from) === toInputDate(defaultFrom()) &&
     toInputDate(to)   === toInputDate(defaultTo())
 

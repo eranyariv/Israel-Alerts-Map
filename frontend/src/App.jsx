@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { RefreshCw, SlidersHorizontal, BarChart2, Shield, Settings } from 'lucide-react'
 import { formatTime } from './utils/dateFormat'
+import { ALL_CATEGORIES } from './utils/heatmap'
 
 import Map from './components/Map'
 import FilterPanel from './components/FilterPanel'
@@ -22,14 +23,24 @@ const HISTORY_TABS = [
 function defaultFrom() { const d = new Date(); d.setMonth(d.getMonth() - 3); return d }
 function defaultTo()   { return new Date() }
 
-function RelayStatus({ wsConnected, mode }) {
+const RELAY_URL = 'https://redalert-relay.yellowforest-0da0af56.uaenorth.azurecontainerapps.io'
+
+function RelayStatus({ wsConnected, relayHealth, mode }) {
   if (mode !== 'live') return null
-  const color = wsConnected === null ? 'bg-slate-600' : wsConnected ? 'bg-green-500' : 'bg-red-500'
-  const label = wsConnected === null ? 'מתחבר...' : wsConnected ? 'מחובר' : 'מנותק'
+  const pending = wsConnected === null || relayHealth === null
+  const ok      = wsConnected === true && relayHealth?.ok === true
+  const color   = pending ? 'bg-slate-600' : ok ? 'bg-green-500' : 'bg-red-500'
   return (
     <div className="flex items-center justify-center gap-1.5 px-4 py-1.5 border-b border-slate-700/50">
       <span className={`block w-1.5 h-1.5 rounded-full shrink-0 ${color}`} />
-      <span className="text-[10px] text-slate-500">{label}</span>
+      <a
+        href={RELAY_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors"
+      >
+        Relay
+      </a>
     </div>
   )
 }
@@ -64,7 +75,7 @@ function ModeSwitch({ mode, onChange }) {
 export default function App() {
   const [mode,            setMode]            = useState('live')
   const [filters,         setFilters]         = useState({
-    categories: [1, 2, 3, 4],
+    categories: ALL_CATEGORIES,
     from: defaultFrom(),
     to:   defaultTo(),
   })
@@ -80,7 +91,7 @@ export default function App() {
   const [demoMode,        setDemoMode]        = useState(false)
   const debugTapRef = useRef({ count: 0, timer: null })
 
-  const { currentAlerts, heatmapData, storedCount, loading, error, lastRefresh, refresh, wipeHistory, wsConnected } = useAlerts({ source: 'redalert', demoMode })
+  const { currentAlerts, heatmapData, loading, error, lastRefresh, refresh, wsConnected, relayHealth } = useAlerts({ source: 'redalert', demoMode })
 
   // Toggle debug with backtick key (works on desktop + physical keyboards on mobile)
   useEffect(() => {
@@ -121,14 +132,14 @@ export default function App() {
       return <LivePanel currentAlerts={visibleAlerts} lastRefresh={lastRefresh} loading={loading} onAreaClick={setFlyToArea} />
     }
     switch (sidebarTab) {
-      case 'stats':   return <StatsPanel heatmapData={heatmapData} storedCount={storedCount} onClearHistory={wipeHistory} loading={loading} filters={filters} onAreaClick={setFlyToArea} />
+      case 'stats':   return <StatsPanel heatmapData={heatmapData} loading={loading} filters={filters} onAreaClick={setFlyToArea} />
       case 'filters': return <FilterPanel {...filters} onChange={handleFilterChange} />
       default:        return null
     }
   }
 
   const hasCustomFilters =
-    filters.categories.length !== 4 ||
+    filters.categories.length !== ALL_CATEGORIES.length ||
     filters.from?.toDateString() !== defaultFrom().toDateString() ||
     filters.to?.toDateString()   !== defaultTo().toDateString()
 
@@ -176,7 +187,7 @@ export default function App() {
           <div className="flex items-center justify-center px-4 py-3 border-b border-slate-700 w-full">
             <ModeSwitch mode={mode} onChange={handleModeChange} />
           </div>
-          <RelayStatus wsConnected={wsConnected} mode={mode} />
+          <RelayStatus wsConnected={wsConnected} relayHealth={relayHealth} mode={mode} />
         </div>
 
         {/* History tabs — only in history mode */}
@@ -268,7 +279,7 @@ export default function App() {
           {/* Mode switch row */}
           <div className="flex flex-col items-center gap-1">
             <ModeSwitch mode={mode} onChange={handleModeChange} />
-            <RelayStatus wsConnected={wsConnected} mode={mode} />
+            <RelayStatus wsConnected={wsConnected} relayHealth={relayHealth} mode={mode} />
           </div>
         </div>
 
@@ -356,7 +367,7 @@ export default function App() {
         {bottomSheetTab === 'live'
           ? <LivePanel currentAlerts={visibleAlerts} lastRefresh={lastRefresh} loading={loading} onAreaClick={setFlyToArea} />
           : bottomSheetTab === 'stats'
-            ? <StatsPanel heatmapData={heatmapData} storedCount={storedCount} onClearHistory={wipeHistory} loading={loading} filters={filters} onAreaClick={setFlyToArea} />
+            ? <StatsPanel heatmapData={heatmapData} loading={loading} filters={filters} onAreaClick={setFlyToArea} />
             : <FilterPanel {...filters} onChange={handleFilterChange} />
         }
       </BottomSheet>

@@ -29,10 +29,14 @@ export function getHeatRadius(count, maxCount) {
 
 /** Return a CSS hex string for a category number. */
 export const CATEGORY_COLORS = {
-  1: '#ef4444', // red   – rockets
+  1: '#ef4444', // red    – rockets
   2: '#f97316', // orange – hostile aircraft
   3: '#7c3aed', // purple – infiltration
-  4: '#0ea5e9', // sky   – earthquake
+  4: '#0ea5e9', // sky    – earthquake
+  5: '#facc15', // yellow – news flash
+  6: '#84cc16', // lime   – radiological
+  7: '#06b6d4', // cyan   – tsunami
+  8: '#f472b6', // pink   – hazardous materials
 }
 
 export const CATEGORY_LABELS = {
@@ -40,6 +44,10 @@ export const CATEGORY_LABELS = {
   2: 'חדירת כלי טיס עוין',
   3: 'חדירת מחבלים',
   4: 'רעידת אדמה',
+  5: 'התראה מקדימה',
+  6: 'אירוע רדיולוגי',
+  7: 'צונאמי',
+  8: 'אירוע חומרים מסוכנים',
 }
 
 export const ALL_FILTER_TYPES = [
@@ -47,4 +55,10 @@ export const ALL_FILTER_TYPES = [
   { value: 2, label: 'חדירת כלי טיס עוין' },
   { value: 3, label: 'חדירת מחבלים' },
   { value: 4, label: 'רעידת אדמה' },
+  { value: 5, label: 'התראה מקדימה' },
+  { value: 6, label: 'אירוע רדיולוגי' },
+  { value: 7, label: 'צונאמי' },
+  { value: 8, label: 'אירוע חומרים מסוכנים' },
 ]
+
+export const ALL_CATEGORIES = [1, 2, 3, 4, 5, 6, 7, 8]
