@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RedAlert History Backfill</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+  body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0;
+         padding: 2rem; line-height: 1.6; max-width: 760px; margin: 0 auto }
+  h1   { font-size: 1.4rem; font-weight: 700; color: #f8fafc; margin-bottom: .25rem }
+  .sub { color: #64748b; font-size: .85rem; margin-bottom: 2rem }
+
+  label { display: block; font-size: .8rem; color: #94a3b8; margin-bottom: .35rem; font-weight: 600 }
+  input[type=text], input[type=password] {
+    width: 100%; padding: .6rem .9rem; background: #1e293b; border: 1px solid #334155;
+    border-radius: .5rem; color: #f1f5f9; font-size: .9rem; font-family: monospace;
+    outline: none; transition: border-color .15s
+  }
+  input:focus { border-color: #3b82f6 }
+
+  .row { display: flex; gap: 1rem; align-items: flex-end; margin-bottom: 1.5rem }
+  .row > div:first-child { flex: 1 }
+
+  button {
+    padding: .65rem 1.4rem; border-radius: .5rem; font-size: .9rem; font-weight: 600;
+    cursor: pointer; border: none; transition: opacity .15s; white-space: nowrap
+  }
+  button:disabled { opacity: .45; cursor: not-allowed }
+  .btn-primary  { background: #1d4ed8; color: #fff }
+  .btn-primary:not(:disabled):hover  { background: #2563eb }
+  .btn-success  { background: #15803d; color: #fff }
+  .btn-success:not(:disabled):hover  { background: #16a34a }
+
+  #progress { display: none; margin-bottom: 1.5rem }
+  .cat-row {
+    display: flex; align-items: center; gap: .75rem; padding: .5rem .75rem;
+    background: #1e293b; border-radius: .5rem; margin-bottom: .4rem;
+    font-size: .85rem
+  }
+  .cat-name  { flex: 1; color: #cbd5e1; font-family: monospace }
+  .cat-count { color: #94a3b8; font-size: .8rem; min-width: 80px; text-align: right }
+  .cat-status { font-size: .75rem; font-weight: 700; letter-spacing: .05em;
+                border-radius: .3rem; padding: .15rem .5rem; min-width: 70px; text-align: center }
+  .status-waiting  { background: #1e293b; color: #475569; border: 1px solid #334155 }
+  .status-running  { background: #1c3a6b; color: #93c5fd; border: 1px solid #3b82f6 }
+  .status-done     { background: #14532d; color: #86efac; border: 1px solid #22c55e }
+  .status-error    { background: #7f1d1d; color: #fca5a5; border: 1px solid #ef4444 }
+
+  #summary {
+    display: none; background: #1e293b; border: 1px solid #334155;
+    border-radius: .75rem; padding: 1.25rem 1.5rem; margin-bottom: 1.5rem
+  }
+  #summary h2 { font-size: 1rem; font-weight: 700; color: #f1f5f9; margin-bottom: .75rem }
+  .stat-row { display: flex; justify-content: space-between; font-size: .875rem;
+              padding: .2rem 0; color: #cbd5e1 }
+  .stat-row strong { color: #fff }
+
+  #log {
+    background: #020617; border: 1px solid #1e293b; border-radius: .5rem;
+    padding: .75rem 1rem; font-family: monospace; font-size: .75rem; color: #64748b;
+    max-height: 200px; overflow-y: auto; margin-bottom: 1.5rem; display: none
+  }
+  .log-ok  { color: #4ade80 }
+  .log-err { color: #f87171 }
+  .log-inf { color: #60a5fa }
+
+  #error-box {
+    display: none; background: #2d0a0a; border: 1px solid #dc2626;
+    border-radius: .5rem; padding: .85rem 1.1rem; color: #fca5a5;
+    font-size: .875rem; margin-bottom: 1.5rem
+  }
+</style>
+</head>
+<body>
+
+<h1>RedAlert History Backfill</h1>
+<p class="sub">Fetches full history for all 8 alert categories from the RedAlert API and downloads it as a JSON file.</p>
+
+<div class="row">
+  <div>
+    <label for="apikey">Private API Key</label>
+    <input type="password" id="apikey"
+           value="pr_MOWrCRNqKRojDStFFrUMPfHtOChYhoQkgDiwMnnJqEtwOLCJXBbMlBimmENyjjmf"
+           placeholder="pr_..." autocomplete="off">
+  </div>
+  <button class="btn-primary" id="btn-fetch" onclick="startFetch()">Fetch All History</button>
+</div>
+
+<div id="error-box"></div>
+
+<div id="progress">
+  <div id="cat-rows"></div>
+</div>
+
+<div id="summary">
+  <h2>Complete</h2>
+  <div id="summary-body"></div>
+</div>
+
+<div id="log"></div>
+
+<button class="btn-success" id="btn-download" style="display:none" onclick="download()">
+  Download JSON
+</button>
+
+<script>
+const RELAY    = 'https://redalert-relay.yellowforest-0da0af56.uaenorth.azurecontainerapps.io'
+const LIMIT    = 100
+const DELAY_MS = 150   // pause between pages to avoid hammering
+
+const CATEGORIES = [
+  { key: 'missiles',                 label: 'missiles' },
+  { key: 'hostileAircraftIntrusion', label: 'hostileAircraftIntrusion' },
+  { key: 'terroristInfiltration',    label: 'terroristInfiltration' },
+  { key: 'earthQuake',               label: 'earthQuake' },
+  { key: 'newsFlash',                label: 'newsFlash' },
+  { key: 'radiologicalEvent',        label: 'radiologicalEvent' },
+  { key: 'tsunami',                  label: 'tsunami' },
+  { key: 'hazardousMaterials',       label: 'hazardousMaterials' },
+]
+
+const CAT_TITLES = {
+  missiles:                 'ירי רקטות וטילים',
+  hostileAircraftIntrusion: 'חדירת כלי טיס עויין',
+  terroristInfiltration:    'חדירת מחבלים',
+  earthQuake:               'רעידת אדמה',
+  newsFlash:                'התראה מקדימה',
+  radiologicalEvent:        'אירוע רדיולוגי',
+  tsunami:                  'צונאמי',
+  hazardousMaterials:       'אירוע חומרים מסוכנים',
+}
+
+let collectedData = null
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)) }
+
+function addLog(msg, cls = '') {
+  const el = document.getElementById('log')
+  el.style.display = 'block'
+  const line = document.createElement('div')
+  if (cls) line.className = cls
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`
+  el.appendChild(line)
+  el.scrollTop = el.scrollHeight
+}
+
+function setStatus(catKey, status, count = null) {
+  const row = document.getElementById(`row-${catKey}`)
+  if (!row) return
+  const badge = row.querySelector('.cat-status')
+  const countEl = row.querySelector('.cat-count')
+  badge.className = `cat-status status-${status}`
+  badge.textContent = status === 'running' ? 'fetching…' :
+                      status === 'done'    ? 'done' :
+                      status === 'error'   ? 'error' : 'waiting'
+  if (count !== null) countEl.textContent = `${count} items`
+}
+
+function showError(msg) {
+  const el = document.getElementById('error-box')
+  el.textContent = msg
+  el.style.display = 'block'
+}
+
+async function fetchCategory(key, apiKey) {
+  const items = []
+  let offset  = 0
+
+  while (true) {
+    const url = new URL(`${RELAY}/proxy/history-page`)
+    url.searchParams.set('category', key)
+    url.searchParams.set('limit',    LIMIT)
+    url.searchParams.set('offset',   offset)
+    url.searchParams.set('apiKey',   apiKey)
+
+    addLog(`GET ${key} offset=${offset}`, 'log-inf')
+
+    const resp = await fetch(url.toString())
+
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '')
+      throw new Error(`HTTP ${resp.status} — ${text.slice(0, 120)}`)
+    }
+
+    const json = await resp.json()
+    const page = json.data ?? []
+    items.push(...page)
+    setStatus(key, 'running', items.length)
+    addLog(`  ${key}: +${page.length} (total ${items.length})`, 'log-ok')
+
+    if (!json.pagination?.hasMore) break
+    offset += json.pagination?.limit ?? LIMIT
+    await sleep(DELAY_MS)
+  }
+
+  return items
+}
+
+async function startFetch() {
+  const apiKey = document.getElementById('apikey').value.trim()
+  if (!apiKey) { showError('Please enter an API key.'); return }
+
+  document.getElementById('error-box').style.display = 'none'
+  document.getElementById('btn-fetch').disabled = true
+  document.getElementById('btn-download').style.display = 'none'
+  document.getElementById('summary').style.display = 'none'
+  document.getElementById('log').innerHTML = ''
+
+  // Build category rows
+  const rowsEl = document.getElementById('cat-rows')
+  rowsEl.innerHTML = ''
+  for (const { key } of CATEGORIES) {
+    rowsEl.innerHTML += `
+      <div class="cat-row" id="row-${key}">
+        <span class="cat-name">${key}</span>
+        <span class="cat-count"></span>
+        <span class="cat-status status-waiting">waiting</span>
+      </div>`
+  }
+  document.getElementById('progress').style.display = 'block'
+
+  const allItems = []
+  const errors   = []
+
+  for (const { key } of CATEGORIES) {
+    setStatus(key, 'running', 0)
+    try {
+      const items = await fetchCategory(key, apiKey)
+      allItems.push(...items.map(item => {
+        const cities = (item.cities ?? []).map(c => c?.name ?? c).filter(Boolean)
+        const ts     = item.timestamp ?? item.savedAt ?? item.startedAt ?? null
+        return {
+          type:      key,
+          category:  key,
+          id:        item.id ?? null,
+          title:     item.title ?? CAT_TITLES[key] ?? key,
+          cities,
+          timestamp: ts,
+          startedAt: ts,
+          endedAt:   ts,
+        }
+      }))
+      setStatus(key, 'done', items.length)
+    } catch (e) {
+      addLog(`ERROR ${key}: ${e.message}`, 'log-err')
+      setStatus(key, 'error')
+      errors.push({ cat: key, error: e.message })
+    }
+  }
+
+  // Sort newest first
+  allItems.sort((a, b) => (b.startedAt ?? '').localeCompare(a.startedAt ?? ''))
+
+  collectedData = allItems
+
+  // Summary
+  const byCat = {}
+  for (const item of allItems) byCat[item.type] = (byCat[item.type] ?? 0) + 1
+  const summaryEl = document.getElementById('summary-body')
+  summaryEl.innerHTML = `
+    <div class="stat-row"><span>Total records</span><strong>${allItems.length}</strong></div>
+    ${Object.entries(byCat).map(([k,v]) => `<div class="stat-row"><span>${k}</span><strong>${v}</strong></div>`).join('')}
+    ${errors.length ? `<div class="stat-row" style="color:#f87171"><span>Errors</span><strong>${errors.length} categories failed</strong></div>` : ''}
+  `
+  document.getElementById('summary').style.display = 'block'
+
+  if (allItems.length > 0) {
+    document.getElementById('btn-download').style.display = 'inline-block'
+  }
+  document.getElementById('btn-fetch').disabled = false
+
+  addLog(`Done. ${allItems.length} total records.`, 'log-ok')
+}
+
+function download() {
+  if (!collectedData) return
+  const blob = new Blob([JSON.stringify(collectedData, null, 2)], { type: 'application/json' })
+  const a    = document.createElement('a')
+  a.href     = URL.createObjectURL(blob)
+  a.download = `redalert-history-backfill-${new Date().toISOString().slice(0,10)}.json`
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
+</script>
+</body>
+</html>

@@ -2,31 +2,29 @@ import express from 'express'
 import { io } from 'socket.io-client'
 import { readFileSync, writeFile } from 'fs'
 
-const RA_URL    = 'https://redalert.orielhaim.com'
-const RA_APIKEY = process.env.RA_APIKEY
-const PORT      = process.env.PORT ?? 8080
+const { version: VERSION } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
+
+const RA_URL        = 'https://redalert.orielhaim.com'
+const RA_APIKEY     = process.env.RA_APIKEY      // public key — used for socket /client connection
+const RA_HTTP_KEY   = process.env.RA_HTTP_KEY    // private key — used for REST API (history)
+const PORT          = process.env.PORT ?? 8080
 
 if (!RA_APIKEY) {
   console.error('[relay] RA_APIKEY env var is required')
   process.exit(1)
+}
+if (!RA_HTTP_KEY) {
+  console.warn('[relay] RA_HTTP_KEY not set — history API calls will fail')
 }
 
 // Map of type → { type, title, cities, startedAt }
 // Keyed by alert type string (e.g. 'missiles', 'newsFlash')
 const activeAlerts = new Map()
 
-// Chronological log of all alert events seen (max 24h), persisted to disk
+// Chronological log of all alert events seen, persisted to disk indefinitely
 // Each entry: { type, title, cities, startedAt, endedAt }  — endedAt null if still active
 const alertHistory = []
-const HISTORY_TTL_MS = 24 * 60 * 60 * 1000
 const HISTORY_FILE  = '/data/alert-history.json'
-
-function pruneHistory() {
-  const cutoff = Date.now() - HISTORY_TTL_MS
-  let i = 0
-  while (i < alertHistory.length && new Date(alertHistory[i].startedAt).getTime() < cutoff) i++
-  if (i > 0) alertHistory.splice(0, i)
-}
 
 // Load persisted history from disk on startup
 try {
@@ -34,7 +32,6 @@ try {
   const data = JSON.parse(raw)
   if (Array.isArray(data)) {
     alertHistory.push(...data)
-    pruneHistory()
     // Restore activeAlerts for any events that hadn't ended when we last shut down
     for (const e of alertHistory) {
       if (!e.endedAt) {
@@ -52,7 +49,8 @@ let _saveTimer = null
 function saveHistory() {
   clearTimeout(_saveTimer)
   _saveTimer = setTimeout(() => {
-    writeFile(HISTORY_FILE, JSON.stringify(alertHistory), 'utf8', err => {
+    const sorted = [...alertHistory].sort((a, b) => (a.startedAt || '').localeCompare(b.startedAt || ''))
+    writeFile(HISTORY_FILE, JSON.stringify(sorted), 'utf8', err => {
       if (err) console.error('[history] save failed:', err.message)
       else console.log(`[history] saved ${alertHistory.length} events to disk`)
     })
@@ -71,9 +69,9 @@ const connState = {
 
 // ── Socket.IO connection ──────────────────────────────────────────────────
 
-const socket = io(RA_URL, {
-  extraHeaders:        { 'x-api-key': RA_APIKEY },
+const socket = io(`${RA_URL}/client`, {
   auth:                { apiKey: RA_APIKEY },
+  extraHeaders:        { 'Origin': 'https://yariv.org' },
   transports:          ['polling', 'websocket'],
   reconnection:        true,
   reconnectionAttempts: Infinity,
@@ -146,7 +144,6 @@ socket.on('alert', (alerts) => {
         cities,
         startedAt: now,
       })
-      pruneHistory()
       alertHistory.push({ type: a.type, title: a.title || '', cities: [...cities], startedAt: now, endedAt: null })
     }
   }
@@ -304,6 +301,7 @@ app.get('/', (req, res) => {
     <strong id="status-title">Checking connection…</strong>
     <small id="status-sub"></small>
   </div>
+  <a href="/history" style="font-size:.78rem;font-weight:500;opacity:.75;text-decoration:none;color:inherit;border:1px solid currentColor;border-radius:.4rem;padding:.2rem .6rem">history →</a>
   <a href="/health" style="font-size:.78rem;font-weight:500;opacity:.75;text-decoration:none;color:inherit;border:1px solid currentColor;border-radius:.4rem;padding:.2rem .6rem">health →</a>
 </div>
 <script>
@@ -352,7 +350,7 @@ app.get('/', (req, res) => {
     <p>
       <strong style="color:#f1f5f9">The relay solves this.</strong>
       It maintains a single persistent upstream connection 24/7, caches the current alert
-      state and a rolling 24-hour history, and exposes everything as a simple REST API.
+      state and a full persistent history, and exposes everything as a simple REST API.
       Any client can just poll an endpoint — no WebSocket, no SDK, no setup.
     </p>
 
@@ -361,7 +359,7 @@ app.get('/', (req, res) => {
       <thead><tr><th>Endpoint</th><th>Description</th></tr></thead>
       <tbody>
         <tr><td>/active</td><td>Currently active alerts — type, Hebrew title, affected cities, start time. Empty array <code>[]</code> when quiet.</td></tr>
-        <tr><td>/history</td><td>All events from the past 24 hours, newest first. Includes <code>startedAt</code> / <code>endedAt</code> (<code>null</code> if ongoing). <a href="/history">View →</a></td></tr>
+        <tr><td>/history</td><td>All events since relay start, newest first. Includes <code>startedAt</code> / <code>endedAt</code> (<code>null</code> if ongoing). <a href="/history">View →</a></td></tr>
         <tr><td>/health</td><td>Upstream connectivity status, reconnect count, diagnostics.</td></tr>
         <tr><td>/demo</td><td>Static sample payload with all 8 alert types — for building UIs without waiting for a real alert.</td></tr>
       </tbody>
@@ -405,7 +403,7 @@ app.get('/', (req, res) => {
 
     <div class="cta-row">
       <a class="cta cta-primary" href="/active">/active — Live data</a>
-      <a class="cta cta-secondary" href="/history">/history — Past 24h</a>
+      <a class="cta cta-secondary" href="/history">/history — All events</a>
       <a class="cta cta-secondary" href="https://yariv.org/map/" target="_blank">Alert Map ↗</a>
     </div>
 
@@ -441,7 +439,7 @@ app.get('/', (req, res) => {
       <span class="tag tag-live">live</span>
     </div>
     <div class="card-body">
-      <p>All alert events seen in the <strong>past 24 hours</strong>, newest first. <code>endedAt</code> is <code>null</code> for still-active alerts. History survives container restarts via Azure Files.</p>
+      <p>All alert events since relay start, newest first. <code>endedAt</code> is <code>null</code> for still-active alerts. History persists across container restarts via Azure Files.</p>
       <ul class="field-list">
         <li><span class="field-name">type</span><span class="field-type">string</span><span class="field-desc">Alert type key</span></li>
         <li><span class="field-name">title</span><span class="field-type">string</span><span class="field-desc">Hebrew display title</span></li>
@@ -497,10 +495,99 @@ app.get('/', (req, res) => {
 
 </div>
 
-<footer>RedAlert Relay &nbsp;·&nbsp; Azure Container Apps, UAE North &nbsp;·&nbsp; upstream: redalert.orielhaim.com &nbsp;·&nbsp; <a href="https://yariv.org">yariv.org</a></footer>
+<footer>RedAlert Relay <strong style="color:#94a3b8">v${VERSION}</strong> &nbsp;·&nbsp; Azure Container Apps, UAE North &nbsp;·&nbsp; upstream: redalert.orielhaim.com &nbsp;·&nbsp; <a href="https://yariv.org">yariv.org</a></footer>
 </div>
 </body>
 </html>`)
+})
+
+const RA_CATEGORIES = ['missiles', 'hostileAircraftIntrusion', 'terroristInfiltration', 'earthQuake', 'newsFlash', 'radiologicalEvent', 'tsunami', 'hazardousMaterials']
+
+// Serve relay's own observed history, filtered by category and date range
+// Query params: startDate, endDate, categories (comma-separated, defaults to all)
+app.get('/api/history', (req, res) => {
+  const { startDate, endDate, categories: catParam } = req.query
+  const categories = catParam
+    ? catParam.split(',').map(s => s.trim()).filter(s => RA_CATEGORIES.includes(s))
+    : RA_CATEGORIES
+
+  console.log(`[api/history] categories=${categories.join(',')} startDate=${startDate ?? '*'} endDate=${endDate ?? '*'} total_stored=${alertHistory.length}`)
+
+  const data = alertHistory
+    .filter(e => categories.includes(e.type))
+    .filter(e => {
+      if (startDate && e.startedAt < startDate) return false
+      if (endDate   && e.startedAt > endDate)   return false
+      return true
+    })
+    .map((e, i) => ({
+      id:        i,
+      type:      e.type,
+      category:  e.type,
+      title:     e.title,
+      cities:    e.cities,
+      timestamp: e.startedAt,
+    }))
+
+  console.log(`[api/history] returning ${data.length} items`)
+  res.json({ data, total: data.length })
+})
+
+// Proxy a single paginated page from the RedAlert history API
+// Used by backfill.html to work around CORS restrictions on local files
+// Query params: category, limit, offset, apiKey (caller supplies their own key)
+app.get('/proxy/history-page', async (req, res) => {
+  const { category, limit = '100', offset = '0', apiKey } = req.query
+  if (!category) return res.status(400).json({ error: 'category required' })
+  if (!apiKey)   return res.status(400).json({ error: 'apiKey required' })
+
+  const url = new URL(`${RA_URL}/api/stats/history`)
+  url.searchParams.set('category', category)
+  url.searchParams.set('limit',    limit)
+  url.searchParams.set('offset',   offset)
+
+  console.log(`[proxy/history-page] ${category} offset=${offset}`)
+  try {
+    const resp = await fetch(url.toString(), {
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'X-API-Key': apiKey },
+    })
+    const ms = Date.now()
+    if (!resp.ok) {
+      console.warn(`[proxy/history-page] upstream ${resp.status} for ${category}`)
+      return res.status(resp.status).json({ error: `upstream ${resp.status}` })
+    }
+    const data = await resp.json()
+    console.log(`[proxy/history-page] ${category} offset=${offset} -> ${data.data?.length ?? 0} items`)
+    res.json(data)
+  } catch (e) {
+    console.error('[proxy/history-page] failed:', e.message)
+    res.status(502).json({ error: e.message })
+  }
+})
+
+// Proxy RedAlert history API — single category, single page (legacy)
+app.get('/proxy/history', async (req, res) => {
+  const url = new URL(`${RA_URL}/api/stats/history`)
+  Object.entries(req.query).forEach(([k, v]) => v != null && url.searchParams.set(k, String(v)))
+  console.log(`[proxy] /history → ${url.pathname}${url.search}`)
+  try {
+    const t0   = Date.now()
+    const resp = await fetch(url.toString(), {
+      headers: { 'Authorization': `Bearer ${RA_APIKEY}`, 'X-API-Key': RA_APIKEY },
+    })
+    const ms = Date.now() - t0
+    if (!resp.ok) {
+      console.warn(`[proxy] upstream error ${resp.status} in ${ms}ms`)
+      res.status(resp.status).json({ error: `upstream ${resp.status}` })
+      return
+    }
+    const data = await resp.json()
+    console.log(`[proxy] /history → ${ms}ms, total=${data?.pagination?.total ?? '?'}`)
+    res.json(data)
+  } catch (e) {
+    console.error('[proxy] /history failed:', e.message)
+    res.status(502).json({ error: e.message })
+  }
 })
 
 // Returns all currently-active alerts with impacted cities and start time
@@ -508,75 +595,15 @@ app.get('/active', (req, res) => {
   res.json([...activeAlerts.values()])
 })
 
-// Returns all alert events from the past 24 hours as an HTML table
+// History page — shows 100 most recent events, loads more on demand
 app.get('/history', (req, res) => {
-  pruneHistory()
-  const events = [...alertHistory].reverse()
-
-  const fmtTime = iso => {
-    if (!iso) return '—'
-    const d = new Date(iso)
-    return d.toLocaleString('en-GB', { timeZone: 'Asia/Jerusalem',
-      day: '2-digit', month: '2-digit', year: 'numeric',
-      hour: '2-digit', minute: '2-digit', second: '2-digit' })
-  }
-
-  const fmtDuration = (start, end) => {
-    if (!end) return null
-    const ms = new Date(end) - new Date(start)
-    const s = Math.floor(ms / 1000)
-    if (s < 60)  return `${s}s`
-    if (s < 3600) return `${Math.floor(s/60)}m ${s%60}s`
-    return `${Math.floor(s/3600)}h ${Math.floor((s%3600)/60)}m`
-  }
-
-  const TYPE_LABELS = {
-    missiles:                 '🚀 Missiles',
-    hostileAircraftIntrusion: '✈️ Hostile Aircraft',
-    terroristInfiltration:    '🔫 Infiltration',
-    earthQuake:               '🌍 Earthquake',
-    radiologicalEvent:        '☢️ Radiological',
-    tsunami:                  '🌊 Tsunami',
-    hazardousMaterials:       '☣️ Hazmat',
-    newsFlash:                '📢 News Flash',
-  }
-
-  const rows = events.map(e => {
-    const active   = !e.endedAt
-    const label    = TYPE_LABELS[e.type] || e.type
-    const duration = fmtDuration(e.startedAt, e.endedAt)
-    const rowClass = active ? 'row-active' : 'row-ended'
-    const badge    = active
-      ? '<span class="badge badge-active">ACTIVE</span>'
-      : '<span class="badge badge-ended">ENDED</span>'
-
-    const cityList = e.cities.length
-      ? `<details>
-           <summary>${e.cities.length} area${e.cities.length !== 1 ? 's' : ''}</summary>
-           <ul>${e.cities.map(c => `<li>${c}</li>`).join('')}</ul>
-         </details>`
-      : '<span class="none">—</span>'
-
-    return `<tr class="${rowClass}">
-      <td class="td-time">${fmtTime(e.startedAt)}</td>
-      <td class="td-type">${label}</td>
-      <td>${badge}</td>
-      <td class="td-dur">${duration ?? '—'}</td>
-      <td class="td-cities">${cityList}</td>
-    </tr>`
-  }).join('\n')
-
-  const empty = events.length === 0
-    ? '<tr><td colspan="5" class="td-empty">No events recorded in the past 24 hours</td></tr>'
-    : ''
-
+  const total = alertHistory.length
   res.setHeader('Content-Type', 'text/html; charset=utf-8')
   res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="refresh" content="15">
 <title>RedAlert Relay — History</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
@@ -623,15 +650,19 @@ app.get('/history', (req, res) => {
                   flex-direction: column; gap: .15rem }
   .none { color: #475569 }
 
-  .refresh { float: right; font-size: .78rem; color: #475569 }
+  #load-more-row td { text-align: center; padding: 1.25rem }
+  #btn-more { background: #1e293b; border: 1px solid #334155; color: #94a3b8;
+              font-size: .82rem; font-weight: 600; padding: .5rem 1.4rem;
+              border-radius: .5rem; cursor: pointer; transition: background .15s }
+  #btn-more:hover:not(:disabled) { background: #334155; color: #f1f5f9 }
+  #btn-more:disabled { opacity: .45; cursor: default }
 </style>
 </head>
 <body>
-<h1>🕐 Alert History — past 24 hours</h1>
+<h1>🕐 Alert History</h1>
 <p class="sub">
-  <span class="count">${events.length} event${events.length !== 1 ? 's' : ''}</span>
+  <span class="count" id="shown-count">loading…</span>
   <a href="/">← back to API docs</a>
-  <span class="refresh">Israel time · auto-pruned after 24 h · resets on container restart</span>
 </p>
 
 <table>
@@ -644,10 +675,112 @@ app.get('/history', (req, res) => {
       <th>Areas</th>
     </tr>
   </thead>
-  <tbody>
-    ${rows}${empty}
-  </tbody>
+  <tbody id="tbody"></tbody>
 </table>
+
+<script>
+  const TOTAL    = ${total}
+  const PAGE     = 100
+  const TYPE_LABELS = {
+    missiles:                 '🚀 Missiles',
+    hostileAircraftIntrusion: '✈️ Hostile Aircraft',
+    terroristInfiltration:    '🔫 Infiltration',
+    earthQuake:               '🌍 Earthquake',
+    radiologicalEvent:        '☢️ Radiological',
+    tsunami:                  '🌊 Tsunami',
+    hazardousMaterials:       '☣️ Hazmat',
+    newsFlash:                '📢 News Flash',
+  }
+
+  let offset = 0
+
+  function fmtTime(iso) {
+    if (!iso) return '—'
+    return new Date(iso).toLocaleString('en-GB', {
+      timeZone: 'Asia/Jerusalem',
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    })
+  }
+
+  function fmtDuration(start, end) {
+    if (!end || end === start || !start) return null
+    const s = Math.floor((new Date(end) - new Date(start)) / 1000)
+    if (s <= 0)   return null
+    if (s < 60)   return s + 's'
+    if (s < 3600) return Math.floor(s/60) + 'm ' + (s%60) + 's'
+    return Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm'
+  }
+
+  function renderRows(events) {
+    const tbody = document.getElementById('tbody')
+    // Remove load-more row if present, will re-add at end
+    const existing = document.getElementById('load-more-row')
+    if (existing) existing.remove()
+
+    for (const e of events) {
+      const active   = !e.endedAt
+      const label    = TYPE_LABELS[e.type] || e.type
+      const duration = fmtDuration(e.startedAt, e.endedAt)
+      const badge    = active
+        ? '<span class="badge badge-active">ACTIVE</span>'
+        : '<span class="badge badge-ended">ENDED</span>'
+      const cities   = Array.isArray(e.cities) ? e.cities : []
+      const cityList = cities.length
+        ? \`<details><summary>\${cities.length} area\${cities.length !== 1 ? 's' : ''}</summary>
+             <ul>\${cities.map(c => \`<li>\${c}</li>\`).join('')}</ul></details>\`
+        : '<span class="none">—</span>'
+
+      const tr = document.createElement('tr')
+      tr.className = active ? 'row-active' : 'row-ended'
+      tr.innerHTML = \`
+        <td class="td-time">\${fmtTime(e.startedAt)}</td>
+        <td class="td-type">\${label}</td>
+        <td>\${badge}</td>
+        <td class="td-dur">\${duration ?? '—'}</td>
+        <td class="td-cities">\${cityList}</td>\`
+      tbody.appendChild(tr)
+    }
+
+    // Add or re-add load-more row
+    offset += events.length
+    updateFooter()
+  }
+
+  function updateFooter() {
+    const tbody = document.getElementById('tbody')
+    let row = document.getElementById('load-more-row')
+    if (!row) {
+      row = document.createElement('tr')
+      row.id = 'load-more-row'
+      row.innerHTML = '<td colspan="5"></td>'
+      tbody.appendChild(row)
+    }
+    const td = row.querySelector('td')
+    if (offset >= TOTAL) {
+      td.innerHTML = \`<span style="color:#475569;font-size:.8rem">All \${TOTAL} events shown</span>\`
+    } else {
+      td.innerHTML = \`<button id="btn-more" onclick="loadMore()">Show 100 more (\${TOTAL - offset} remaining)</button>\`
+    }
+    document.getElementById('shown-count').textContent =
+      \`Showing \${offset} of \${TOTAL} event\${TOTAL !== 1 ? 's' : ''}\`
+  }
+
+  async function loadMore() {
+    const btn = document.getElementById('btn-more')
+    if (btn) { btn.disabled = true; btn.textContent = 'Loading…' }
+    try {
+      const res  = await fetch(\`/history.json?offset=\${offset}&limit=\${PAGE}\`)
+      const data = await res.json()
+      renderRows(data)
+    } catch (e) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Retry' }
+    }
+  }
+
+  // Initial load
+  loadMore()
+</script>
 </body>
 </html>`)
 })
@@ -707,10 +840,12 @@ app.get('/demo', (req, res) => {
   ])
 })
 
-// History as JSON
+// History as JSON — sorted newest first, supports ?offset=N&limit=N for pagination
 app.get('/history.json', (req, res) => {
-  pruneHistory()
-  res.json([...alertHistory].reverse())
+  const all    = [...alertHistory].sort((a, b) => (b.startedAt || '').localeCompare(a.startedAt || ''))
+  const offset = Math.max(0, parseInt(req.query.offset ?? '0', 10) || 0)
+  const limit  = Math.max(0, parseInt(req.query.limit  ?? '0', 10) || 0)
+  res.json(limit > 0 ? all.slice(offset, offset + limit) : all)
 })
 
 // Health / status endpoint
@@ -718,6 +853,7 @@ app.get('/health', (req, res) => {
   const connected = socket.connected
   res.json({
     ok:                connected,
+    version:           VERSION,
     connected,
     connectedAt:       connState.connectedAt,
     disconnectedAt:    connState.disconnectedAt,
@@ -730,5 +866,5 @@ app.get('/health', (req, res) => {
 })
 
 app.listen(PORT, () => {
-  console.log(`[relay] listening on :${PORT}`)
+  console.log(`[relay] v${VERSION} listening on :${PORT}`)
 })

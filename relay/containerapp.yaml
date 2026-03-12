@@ -2,9 +2,11 @@ properties:
   configuration:
     secrets:
       - name: ra-apikey
-        value: "CqfarpQQEpiQrskKallxRXJKnbuGUywXeVgafWGkTCWbaAGsJzeltxtzuMNrjFVo"
+        value: "pb_XaEtDkpqrpYNEwQkIWxGmwohEBhhiuNCSKxpjwFHpFKGMOaidXcEDdjVyJBUajWF"
+      - name: ra-http-key
+        value: "pr_MOWrCRNqKRojDStFFrUMPfHtOChYhoQkgDiwMnnJqEtwOLCJXBbMlBimmENyjjmf"
   template:
-    revisionSuffix: fix-endalert
+    revisionSuffix: v1-11
     containers:
       - name: redalert-relay
         image: redalertrelay.azurecr.io/redalert-relay:latest
@@ -14,6 +16,8 @@ properties:
         env:
           - name: RA_APIKEY
             secretRef: ra-apikey
+          - name: RA_HTTP_KEY
+            secretRef: ra-http-key
         volumeMounts:
           - volumeName: relay-data
             mountPath: /data
