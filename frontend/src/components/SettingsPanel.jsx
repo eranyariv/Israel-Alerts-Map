@@ -5,10 +5,6 @@ import { VERSION } from '../version'
 
 const SITE_URL = 'https://yariv.org/map/'
 
-const ALERT_SOURCES = [
-  { id: 'oref',     label: 'פיקוד העורף',  desc: 'מקור ברירת מחדל', disabled: true },
-  { id: 'redalert', label: 'Red Alert API', desc: 'redalert.orielhaim.com' },
-]
 
 function Section({ title, children }) {
   return (
@@ -50,7 +46,6 @@ function OptionRow({ label, desc, selected, onClick, disabled }) {
 export default function SettingsPanel({
   isOpen, onClose,
   mapType, onMapTypeChange,
-  alertsSource, onAlertsSourceChange,
   demoMode, onDemoModeChange,
 }) {
   useEffect(() => {
@@ -85,21 +80,6 @@ export default function SettingsPanel({
             {Object.entries(MAP_TILES).map(([id, tile]) => (
               <OptionRow key={id} label={tile.label} selected={mapType === id} onClick={() => onMapTypeChange(id)} />
             ))}
-          </Section>
-
-          {/* Alerts source */}
-          <Section title="מקור התראות">
-            {ALERT_SOURCES.map(src => (
-              <OptionRow
-                key={src.id}
-                label={src.label}
-                desc={src.desc}
-                selected={alertsSource === src.id}
-                onClick={() => onAlertsSourceChange(src.id)}
-                disabled={src.disabled}
-              />
-            ))}
-
           </Section>
 
           {/* Demo mode */}

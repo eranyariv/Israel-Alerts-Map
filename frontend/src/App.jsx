@@ -73,11 +73,17 @@ function ModeSwitch({ mode, onChange }) {
 }
 
 export default function App() {
-  const [mode,            setMode]            = useState('live')
-  const [filters,         setFilters]         = useState({
-    categories: ALL_CATEGORIES,
-    from: defaultFrom(),
-    to:   defaultTo(),
+  const [mode,            setMode]            = useState(() => localStorage.getItem('viewMode') || 'live')
+  const [filters,         setFilters]         = useState(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem('historyFilters'))
+      if (s) return {
+        categories: Array.isArray(s.categories) ? s.categories : ALL_CATEGORIES,
+        from: s.from ? new Date(s.from) : defaultFrom(),
+        to:   s.to   ? new Date(s.to)   : defaultTo(),
+      }
+    } catch {}
+    return { categories: ALL_CATEGORIES, from: defaultFrom(), to: defaultTo() }
   })
   const [dismissedId,     setDismissedId]     = useState(null)
   const [sidebarTab,      setSidebarTab]      = useState('stats')
@@ -87,7 +93,6 @@ export default function App() {
   const [debugShown,      setDebugShown]      = useState(false)
   const [settingsOpen,    setSettingsOpen]    = useState(false)
   const [mapType,         setMapType]         = useState(() => localStorage.getItem('mapType') || DEFAULT_MAP_TYPE)
-  const [alertsSource,    setAlertsSource]    = useState('redalert')
   const [demoMode,        setDemoMode]        = useState(false)
   const debugTapRef = useRef({ count: 0, timer: null })
 
@@ -117,7 +122,15 @@ export default function App() {
   useEffect(() => { refresh(filters) }, []) // eslint-disable-line
 
   const handleRefresh = () => mode !== 'live' && refresh(filters)
-  const handleFilterChange = (next) => { setFilters(next); refresh(next) }
+  const handleFilterChange = (next) => {
+    setFilters(next)
+    refresh(next)
+    localStorage.setItem('historyFilters', JSON.stringify({
+      categories: next.categories,
+      from: next.from?.toISOString(),
+      to:   next.to?.toISOString(),
+    }))
+  }
 
   const visibleAlerts = currentAlerts.filter(a => a.id !== dismissedId)
 
@@ -125,6 +138,7 @@ export default function App() {
 
   const handleModeChange = useCallback((next) => {
     setMode(next)
+    localStorage.setItem('viewMode', next)
   }, [])
 
   const renderSidebarContent = () => {
@@ -348,8 +362,6 @@ export default function App() {
         onClose={() => setSettingsOpen(false)}
         mapType={mapType}
         onMapTypeChange={(t) => { setMapType(t); localStorage.setItem('mapType', t) }}
-        alertsSource={alertsSource}
-        onAlertsSourceChange={(s) => { setAlertsSource(s); localStorage.setItem('alertsSource', s) }}
         demoMode={demoMode}
         onDemoModeChange={setDemoMode}
       />
