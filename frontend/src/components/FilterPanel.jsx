@@ -67,7 +67,7 @@ export default function FilterPanel({ categories, from, to, onChange }) {
 
       {/* Category */}
       <div className="space-y-2">
-        <div className="text-xs text-slate-400 font-semibold uppercase tracking-wide">סוג התראה</div>
+        <div className="text-xs text-slate-400 font-semibold uppercase tracking-wide">סוג התרעה</div>
         {ALL_FILTER_TYPES.map(type => {
           const active = categories.includes(type.value)
           return (

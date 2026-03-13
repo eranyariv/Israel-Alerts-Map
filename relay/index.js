@@ -487,7 +487,7 @@ app.get('/', (req, res) => {
         <li><span class="field-name">earthQuake</span><span class="field-desc">רעידת אדמה — Earthquake</span></li>
         <li><span class="field-name">tsunami</span><span class="field-desc">צונאמי — Tsunami</span></li>
         <li><span class="field-name">hazardousMaterials</span><span class="field-desc">אירוע חומרים מסוכנים — Hazardous materials</span></li>
-        <li><span class="field-name">newsFlash</span><span class="field-desc">התראה מקדימה — Preliminary warning / news flash</span></li>
+        <li><span class="field-name">newsFlash</span><span class="field-desc">התרעה מקדימה — Preliminary warning / news flash</span></li>
       </ul>
       <a class="try-link" href="/demo">Try it →</a>
     </div>
@@ -833,7 +833,7 @@ app.get('/demo', (req, res) => {
     },
     {
       type:      'newsFlash',
-      title:     'התראה מקדימה',
+      title:     'התרעה מקדימה',
       cities:    ['תל אביב - מרכז העיר', 'תל אביב - מזרח', 'תל אביב - עבר הירקון', 'תל אביב - דרום העיר ויפו', 'ירושלים - מערב', 'ירושלים - דרום', 'חיפה - כרמל, הדר ועיר תחתית', 'באר שבע - מערב', 'באר שבע - צפון'],
       startedAt: now,
     },

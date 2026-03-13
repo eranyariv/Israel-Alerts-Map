@@ -20,7 +20,7 @@ CAT_TITLES = {
     "hostileAircraftIntrusion": "חדירת כלי טיס עויין",
     "terroristInfiltration":    "חדירת מחבלים",
     "earthQuake":               "רעידת אדמה",
-    "newsFlash":                "התראה מקדימה",
+    "newsFlash":                "התרעה מקדימה",
     "radiologicalEvent":        "אירוע רדיולוגי",
     "tsunami":                  "צונאמי",
     "hazardousMaterials":       "אירוע חומרים מסוכנים",
@@ -49,7 +49,7 @@ for item in backfill:
     normalised_backfill.append({
         "_id":      item.get("id"),       # UUID from RedAlert API (kept for dedup only)
         "type":     cat,
-        "title":    item.get("title") or CAT_TITLES.get(cat, "התראה"),
+        "title":    item.get("title") or CAT_TITLES.get(cat, "התרעה"),
         "cities":   cities,
         "startedAt": ts,
         "endedAt":   ts,                  # duration unknown for historical records

@@ -29,7 +29,7 @@ export default function LivePanel({ currentAlerts, lastRefresh, loading, onAreaC
         }`} />
         <div className="flex-1 min-w-0">
           <div className="text-sm font-bold text-white">
-            {isQuiet ? 'שקט — אין התראות פעילות' : `${currentAlerts.length} ${currentAlerts.length === 1 ? 'התראה פעילה' : 'התראות פעילות'}`}
+            {isQuiet ? 'שקט — אין התרעות פעילות' : `${currentAlerts.length} ${currentAlerts.length === 1 ? 'התרעה פעילה' : 'התרעות פעילות'}`}
           </div>
           <div className="text-xs text-slate-400 mt-0.5">
             {loading
@@ -50,7 +50,7 @@ export default function LivePanel({ currentAlerts, lastRefresh, loading, onAreaC
           <div className="flex items-center gap-2">
             <Activity size={14} style={{ color }} className="shrink-0" />
             <span className="text-sm font-semibold" style={{ color }}>
-              {alert.title || 'התראה'}
+              {alert.title || 'התרעה'}
             </span>
           </div>
           {alert.cities?.length > 0 && (

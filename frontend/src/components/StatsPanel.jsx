@@ -112,11 +112,11 @@ export default function StatsPanel({ heatmapData, loading, filters, onAreaClick 
               <div className="text-xs text-slate-400">בטווח הנבחר</div>
               <div className="text-xl font-bold text-white">
                 {total}
-                <span className="text-sm text-slate-400 mr-1">התראות</span>
+                <span className="text-sm text-slate-400 mr-1">התרעות</span>
               </div>
               {lastAlertDate && (
                 <div className="text-xs text-slate-400 mt-0.5">
-                  התראה אחרונה: <span className="text-slate-300">{formatDateTime(lastAlertDate)}</span>
+                  התרעה אחרונה: <span className="text-slate-300">{formatDateTime(lastAlertDate)}</span>
                 </div>
               )}
             </div>
@@ -143,7 +143,7 @@ export default function StatsPanel({ heatmapData, loading, filters, onAreaClick 
             <div className="space-y-2">
               <div className="text-xs text-slate-400 font-semibold uppercase tracking-wide flex items-center gap-1">
                 <TrendingUp size={12} className="text-red-400" />
-                <span>250 אזורים עם הכי הרבה התראות</span>
+                <span>250 אזורים עם הכי הרבה התרעות</span>
               </div>
               <div className="overflow-y-auto max-h-64 space-y-2 pl-1 pr-1 scrollbar-thin">
                 {topCities.map((c, i) => (
@@ -166,7 +166,7 @@ export default function StatsPanel({ heatmapData, loading, filters, onAreaClick 
             <div className="space-y-2">
               <div className="text-xs text-slate-400 font-semibold uppercase tracking-wide flex items-center gap-1">
                 <TrendingDown size={12} className="text-green-400" />
-                <span>250 אזורים עם הכי פחות התראות</span>
+                <span>250 אזורים עם הכי פחות התרעות</span>
               </div>
               <div className="overflow-y-auto max-h-64 space-y-2 pl-1 pr-1 scrollbar-thin">
                 {bottomCities.map((c, i) => (

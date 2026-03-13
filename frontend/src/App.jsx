@@ -171,7 +171,7 @@ export default function App() {
             <img src="/map/logo.png" alt="לוגו" style={{width:32,height:32,objectFit:'contain'}} />
           </div>
           <div className="flex-1 min-w-0">
-            <h1 className="text-base font-bold text-white leading-tight">מפת התראות ישראל</h1>
+            <h1 className="text-base font-bold text-white leading-tight">מפת התרעות ישראל</h1>
             <p className="text-xs text-slate-400">
               {lastRefresh ? `עודכן ${formatTime(lastRefresh)}` : 'לא עודכן עדיין'}
             </p>
@@ -264,10 +264,10 @@ export default function App() {
               <Shield size={13} className={visibleAlerts.length > 0 ? 'text-red-400' : 'text-green-400'} />
               <span className="text-xs text-slate-300 truncate">
                 {visibleAlerts.length > 0
-                  ? `${visibleAlerts.length} ${visibleAlerts.length === 1 ? 'התראה פעילה' : 'התראות פעילות'}${lastRefresh ? ` · ${formatTime(lastRefresh)}` : ''}`
+                  ? `${visibleAlerts.length} ${visibleAlerts.length === 1 ? 'התרעה פעילה' : 'התרעות פעילות'}${lastRefresh ? ` · ${formatTime(lastRefresh)}` : ''}`
                   : mode === 'live'
-                    ? `שקט — אין התראות פעילות${lastRefresh ? ` · ${formatTime(lastRefresh)}` : ''}`
-                    : lastRefresh ? `עודכן ${formatTime(lastRefresh)}` : 'מפת התראות ישראל'}
+                    ? `שקט — אין התרעות פעילות${lastRefresh ? ` · ${formatTime(lastRefresh)}` : ''}`
+                    : lastRefresh ? `עודכן ${formatTime(lastRefresh)}` : 'מפת התרעות ישראל'}
               </span>
             </div>
             <button

@@ -40,7 +40,7 @@ CAT_TITLES = {
     "hostileAircraftIntrusion": "חדירת כלי טיס עויין",
     "terroristInfiltration":    "חדירת מחבלים",
     "earthQuake":               "רעידת אדמה",
-    "newsFlash":                "התראה מקדימה",
+    "newsFlash":                "התרעה מקדימה",
     "radiologicalEvent":        "אירוע רדיולוגי",
     "tsunami":                  "צונאמי",
     "hazardousMaterials":       "אירוע חומרים מסוכנים",
@@ -103,7 +103,7 @@ for cat in CATEGORIES:
             ts     = item.get("timestamp") or item.get("savedAt") or item.get("startedAt") or ""
             backfill.append({
                 "type":      cat,
-                "title":     item.get("title") or CAT_TITLES.get(cat, "התראה"),
+                "title":     item.get("title") or CAT_TITLES.get(cat, "התרעה"),
                 "cities":    cities,
                 "startedAt": ts,
                 "endedAt":   ts,   # duration unknown for historical records

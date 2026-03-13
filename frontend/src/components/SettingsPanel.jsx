@@ -94,7 +94,7 @@ export default function SettingsPanel({
             >
               <div className="text-right">
                 <div>מצב דמו</div>
-                <div className="text-xs text-slate-500 mt-0.5">מציג התראות לדוגמה במקום חי</div>
+                <div className="text-xs text-slate-500 mt-0.5">מציג התרעות לדוגמה במקום חי</div>
               </div>
               <div dir="ltr" className={`w-9 h-5 rounded-full border transition-colors shrink-0 mr-2 flex items-center px-0.5
                 ${demoMode ? 'bg-amber-500 border-amber-400' : 'bg-slate-600 border-slate-500'}`}>

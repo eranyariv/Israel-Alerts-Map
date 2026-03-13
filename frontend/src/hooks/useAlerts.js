@@ -8,7 +8,7 @@ const RELAY_URL = import.meta.env.VITE_RA_RELAY_URL  // all calls go through the
 const ACTIVE_POLL_MS  = 5_000   // poll /active every 5 s
 const HEALTH_POLL_MS  = 15_000  // poll /health every 15 s
 
-const CAT_TITLES = { 1: 'ירי רקטות וטילים', 2: 'חדירת כלי טיס עויין', 3: 'חדירת מחבלים', 4: 'רעידת אדמה', 5: 'התראה מקדימה', 6: 'אירוע רדיולוגי', 7: 'צונאמי', 8: 'אירוע חומרים מסוכנים' }
+const CAT_TITLES = { 1: 'ירי רקטות וטילים', 2: 'חדירת כלי טיס עויין', 3: 'חדירת מחבלים', 4: 'רעידת אדמה', 5: 'התרעה מקדימה', 6: 'אירוע רדיולוגי', 7: 'צונאמי', 8: 'אירוע חומרים מסוכנים' }
 
 const RA_TYPE_TO_CAT = {
   missiles: 1, missile: 1, rockets: 1,
@@ -41,7 +41,7 @@ function parseAlertItem(item) {
   if (!cat) return null
   const cities = Array.isArray(item.cities) ? item.cities.filter(Boolean) : []
   if (!cities.length) return null
-  return { id: `ra-${item.type}`, cat, title: item.title || CAT_TITLES[cat] || 'התראה', cities }
+  return { id: `ra-${item.type}`, cat, title: item.title || CAT_TITLES[cat] || 'התרעה', cities }
 }
 
 // ── History helpers ────────────────────────────────────────────────────────
@@ -93,7 +93,7 @@ async function fetchRedAlertHeatmap(from, to, categories = []) {
     if (!cat) return []
     const cities = (item.cities ?? []).map(c => c.name ?? c).filter(Boolean)
     if (!cities.length) return []
-    return [{ id: String(item.id), cat, title: CAT_TITLES[cat] ?? 'התראה', cities, savedAt: item.timestamp }]
+    return [{ id: String(item.id), cat, title: CAT_TITLES[cat] ?? 'התרעה', cities, savedAt: item.timestamp }]
   })
 
   const MERGE_WINDOW_MS = 4 * 60 * 1000

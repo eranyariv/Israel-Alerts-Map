@@ -130,7 +130,7 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
     2: 'חדירת כלי טיס עויין',
     3: 'חדירת מחבלים',
     4: 'רעידת אדמה',
-    5: 'התראה מקדימה',
+    5: 'התרעה מקדימה',
     6: 'אירוע רדיולוגי',
     7: 'צונאמי',
     8: 'אירוע חומרים מסוכנים',
@@ -209,13 +209,13 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
       const active = liveZones.has(name)
       const liveCat   = liveAlertMap[name]
       const liveColor = CAT_COLORS[liveCat] ?? '#ef4444'
-      const liveLabel = CAT_LABELS[liveCat] ?? 'התראה פעילה'
+      const liveLabel = CAT_LABELS[liveCat] ?? 'התרעה פעילה'
       layer.bindTooltip(
         `<div dir="rtl" style="font-family:Assistant,sans-serif;min-width:130px">
            <div style="font-weight:700;font-size:14px;margin-bottom:4px">${name}</div>
            ${active
              ? `<div style="color:${liveColor};font-weight:600;font-size:13px">⚠️ ${liveLabel}</div>`
-             : `<div style="color:#94a3b8;font-size:12px">אין התראות פעילות</div>`}
+             : `<div style="color:#94a3b8;font-size:12px">אין התרעות פעילות</div>`}
          </div>`,
         { direction: 'top', sticky: false }
       )
@@ -227,10 +227,10 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
       `<div dir="rtl" style="font-family:Assistant,sans-serif;min-width:130px">
          <div style="font-weight:700;font-size:14px;margin-bottom:4px">${name}</div>
          ${count > 0 ? `
-           <div style="color:${getHeatColor(count, maxCount)};font-weight:600;font-size:13px">${count} התראות</div>
+           <div style="color:${getHeatColor(count, maxCount)};font-weight:600;font-size:13px">${count} התרעות</div>
            ${last ? `<div style="color:#94a3b8;font-size:11px;margin-top:2px">אחרון: ${last}</div>` : ''}
            <div style="color:#475569;font-size:10px;margin-top:4px">לחץ לרשימה מלאה</div>
-         ` : `<div style="color:#94a3b8;font-size:12px">אין התראות</div>`}
+         ` : `<div style="color:#94a3b8;font-size:12px">אין התרעות</div>`}
        </div>`,
       { direction: 'top', sticky: false }
     )
@@ -240,7 +240,7 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
       layer.bindPopup(() => {
         const rows = alerts.map(a => {
           const dt    = fmtDate(a.savedAt) || ''
-          const label = CAT_LABELS[a.cat] || a.title || 'התראה'
+          const label = CAT_LABELS[a.cat] || a.title || 'התרעה'
           const color = CAT_COLORS[a.cat] || '#94a3b8'
           return `<div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid #1e293b">
             <span style="color:#64748b;font-size:11px;font-family:monospace;white-space:nowrap;direction:ltr">${dt}</span>
@@ -249,7 +249,7 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
         }).join('')
         return `<div dir="rtl" style="font-family:Assistant,sans-serif;width:290px">
           <div style="font-weight:700;font-size:15px;color:#f1f5f9;margin-bottom:2px">${name}</div>
-          <div style="font-size:12px;color:#64748b;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid #334155">${alerts.length} התראות</div>
+          <div style="font-size:12px;color:#64748b;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid #334155">${alerts.length} התרעות</div>
           <div style="max-height:300px;overflow-y:auto">${rows}</div>
         </div>`
       }, { maxWidth: 340 })
