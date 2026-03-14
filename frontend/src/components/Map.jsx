@@ -388,7 +388,7 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
          ${count > 0 ? `
            <div style="color:${getHeatColor(count, maxCount)};font-weight:600;font-size:13px">${count} התרעות</div>
            ${last ? `<div style="color:#94a3b8;font-size:11px;margin-top:2px">אחרון: ${last}</div>` : ''}
-           <div style="color:#475569;font-size:10px;margin-top:4px">לחץ לרשימה מלאה</div>
+           <div style="color:#475569;font-size:10px;margin-top:4px">פרטים נוספים</div>
          ` : `<div style="color:#94a3b8;font-size:12px">אין התרעות</div>`}
        </div>`,
       { direction: 'top', sticky: false }
@@ -397,6 +397,30 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
     const alerts = byCity[name]
     if (alerts?.length) {
       layer.bindPopup(() => {
+        // Build 24-hour histogram (exclude newsFlash cat 5)
+        const hourBins = new Array(24).fill(0)
+        for (const a of alerts) {
+          if (a.cat === 5) continue
+          try { hourBins[new Date(a.savedAt).getHours()]++ } catch {}
+        }
+        const maxBin = Math.max(...hourBins, 1)
+        const hasHistogram = hourBins.some(v => v > 0)
+
+        const histogramHtml = hasHistogram ? `
+          <div style="margin-bottom:10px">
+            <div style="font-size:10px;color:#64748b;margin-bottom:4px">התפלגות לפי שעות (ללא התרעות מקדימות)</div>
+            <div style="display:flex;align-items:flex-end;gap:1px;height:40px;direction:ltr">
+              ${hourBins.map((v, h) => {
+                const pct = v > 0 ? Math.max(8, Math.round((v / maxBin) * 100)) : 0
+                const color = v > 0 ? '#ef4444' : '#1e293b'
+                return `<div title="${String(h).padStart(2,'0')}:00 — ${v}" style="flex:1;height:${pct}%;background:${color};border-radius:1px 1px 0 0;min-height:${v > 0 ? 3 : 1}px"></div>`
+              }).join('')}
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:8px;color:#475569;margin-top:2px;direction:ltr">
+              <span>00</span><span>06</span><span>12</span><span>18</span><span>23</span>
+            </div>
+          </div>` : ''
+
         const rows = alerts.map(a => {
           const dt    = fmtDate(a.savedAt) || ''
           const label = CAT_LABELS[a.cat] || a.title || 'התרעה'
@@ -409,7 +433,8 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
         return `<div dir="rtl" style="font-family:Assistant,sans-serif;width:290px">
           <div style="font-weight:700;font-size:15px;color:#f1f5f9;margin-bottom:2px">${name}</div>
           <div style="font-size:12px;color:#64748b;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid #334155">${alerts.length} התרעות</div>
-          <div style="max-height:300px;overflow-y:auto">${rows}</div>
+          ${histogramHtml}
+          <div style="max-height:250px;overflow-y:auto">${rows}</div>
         </div>`
       }, { maxWidth: 340 })
     }
