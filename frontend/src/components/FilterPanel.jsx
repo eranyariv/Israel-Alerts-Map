@@ -18,9 +18,15 @@ const CONFLICTS = [
   { label: 'מבצע צוק איתן',      from: '2014-07-08', to: '2014-08-26' },
 ]
 
-function toInputDate(date) {
+function toInputDateTime(date) {
   if (!date) return ''
-  return date.toISOString().slice(0, 10)
+  const d = new Date(date)
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const min = String(d.getMinutes()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}T${hh}:${min}`
 }
 
 function AreaFilter({ areas, allAreas, onChange }) {
@@ -171,8 +177,8 @@ export default function FilterPanel({ categories, from, to, areas, allAreas, onC
 
   const isDefault =
     categories.length === ALL_CATEGORIES.length &&
-    toInputDate(from) === toInputDate(defaultFrom()) &&
-    toInputDate(to)   === toInputDate(defaultTo()) &&
+    toInputDateTime(from).slice(0,10) === toInputDateTime(defaultFrom()).slice(0,10) &&
+    toInputDateTime(to).slice(0,10)   === toInputDateTime(defaultTo()).slice(0,10) &&
     (!areas || areas.length === 0)
 
   return (
@@ -244,9 +250,9 @@ export default function FilterPanel({ categories, from, to, areas, allAreas, onC
           <div>
             <label className="text-xs text-slate-400 block mb-1">מתאריך</label>
             <input
-              type="date"
-              value={toInputDate(from)}
-              max={toInputDate(to) || toInputDate(new Date())}
+              type="datetime-local"
+              value={toInputDateTime(from)}
+              max={toInputDateTime(to) || toInputDateTime(new Date())}
               onChange={e => onChange({ categories, from: e.target.value ? new Date(e.target.value) : null, to, areas })}
               className="w-full bg-slate-700/60 border border-slate-600 rounded-lg px-3 py-2
                          text-sm text-white focus:outline-none focus:border-blue-500
@@ -256,10 +262,10 @@ export default function FilterPanel({ categories, from, to, areas, allAreas, onC
           <div>
             <label className="text-xs text-slate-400 block mb-1">עד תאריך</label>
             <input
-              type="date"
-              value={toInputDate(to)}
-              min={toInputDate(from)}
-              max={toInputDate(new Date())}
+              type="datetime-local"
+              value={toInputDateTime(to)}
+              min={toInputDateTime(from)}
+              max={toInputDateTime(new Date())}
               onChange={e => onChange({ categories, from, to: e.target.value ? new Date(e.target.value) : null, areas })}
               className="w-full bg-slate-700/60 border border-slate-600 rounded-lg px-3 py-2
                          text-sm text-white focus:outline-none focus:border-blue-500

@@ -74,6 +74,54 @@ function ModeSwitch({ mode, onChange }) {
   )
 }
 
+/** Convert an HSL color string "hsl(h, s%, l%)" to KML hex "aabbggrr" */
+function hslToKmlColor(hslStr, alpha = 0.7) {
+  const m = hslStr.match(/hsl\(\s*([\d.]+)\s*,\s*([\d.]+)%?\s*,\s*([\d.]+)%?\s*\)/)
+  if (!m) return 'aa0000ff' // fallback red
+  let h = parseFloat(m[1]) / 360
+  let s = parseFloat(m[2]) / 100
+  let l = parseFloat(m[3]) / 100
+  // HSL to RGB
+  let r, g, b
+  if (s === 0) {
+    r = g = b = l
+  } else {
+    const hue2rgb = (p, q, t) => {
+      if (t < 0) t += 1
+      if (t > 1) t -= 1
+      if (t < 1/6) return p + (q - p) * 6 * t
+      if (t < 1/2) return q
+      if (t < 2/3) return p + (q - p) * (2/3 - t) * 6
+      return p
+    }
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s
+    const p = 2 * l - q
+    r = hue2rgb(p, q, h + 1/3)
+    g = hue2rgb(p, q, h)
+    b = hue2rgb(p, q, h - 1/3)
+  }
+  const toHex = (v) => Math.round(v * 255).toString(16).padStart(2, '0')
+  // KML color format: aabbggrr
+  const aa = toHex(alpha)
+  const bb = toHex(b)
+  const gg = toHex(g)
+  const rr = toHex(r)
+  return `${aa}${bb}${gg}${rr}`
+}
+
+/** Get a heatmap color (green to red) based on value/max ratio */
+function getHeatColor(value, max) {
+  if (!max || !value) return 'hsl(120, 60%, 40%)'
+  const ratio = Math.min(value / max, 1)
+  const hue = 120 - ratio * 120 // 120=green, 0=red
+  return `hsl(${hue}, 70%, 45%)`
+}
+
+/** Convert GeoJSON coordinates to KML coordinate string */
+function coordsToKml(ring) {
+  return ring.map(([lon, lat]) => `${lon},${lat},0`).join(' ')
+}
+
 export default function App() {
   const [mode,            setMode]            = useState(() => localStorage.getItem('viewMode') || 'live')
   const [filters,         setFilters]         = useState(() => {
@@ -98,17 +146,22 @@ export default function App() {
   const [mapType,         setMapType]         = useState(() => localStorage.getItem('mapType') || DEFAULT_MAP_TYPE)
   const [demoMode,        setDemoMode]        = useState(false)
   const [allAreas,        setAllAreas]        = useState([])
+  const [historyView,     setHistoryView]     = useState('heatmap') // 'heatmap' | 'realization'
+  const [zonesGeoJson,    setZonesGeoJson]    = useState(null)
+  const [realizationData, setRealizationData] = useState({})
+  const [realizationProgress, setRealizationProgress] = useState(null)
   const debugTapRef = useRef({ count: 0, timer: null })
 
   const { currentAlerts, heatmapData, rawEvents, loading, error, lastRefresh, refresh, wsConnected, relayHealth } = useAlerts({ source: 'redalert', demoMode })
 
-  // Load all zone names from GeoJSON for area filter autocomplete
+  // Load all zone names AND full GeoJSON from geojson file
   useEffect(() => {
     fetch(`${import.meta.env.BASE_URL}alertZones.geojson`)
       .then(r => r.json())
       .then(data => {
         const names = data.features.map(f => f.properties.name).filter(Boolean).sort()
         setAllAreas(names)
+        setZonesGeoJson(data)
       })
       .catch(() => {})
   }, [])
@@ -179,12 +232,156 @@ export default function App() {
     return rawEvents.filter(e => e.cities.some(c => areaSet.has(c)))
   }, [rawEvents, filters.areas])
 
+  // Clear realization data when inputs change
+  useEffect(() => {
+    setRealizationData({})
+    setRealizationProgress(null)
+  }, [rawEvents, filters.areas])
+
+  // Manual realization computation with progress
+  const computeRealization = useCallback(async () => {
+    setRealizationProgress(0)
+
+    const events = filters.areas?.length
+      ? rawEvents.filter(e => e.cities.some(c => new Set(filters.areas).has(c)))
+      : rawEvents
+
+    const newsFlashes = events.filter(e => e.cat === 5)
+    const realAlerts  = events.filter(e => e.cat !== 5)
+
+    if (!newsFlashes.length) {
+      setRealizationData({})
+      setRealizationProgress(null)
+      return
+    }
+
+    const WINDOW_MS = 12 * 60 * 1000
+    const stats = {} // city -> { correct, total }
+
+    for (let i = 0; i < newsFlashes.length; i++) {
+      const nf = newsFlashes[i]
+      const nfTime = new Date(nf.savedAt).getTime()
+      for (const city of nf.cities) {
+        if (filters.areas?.length && !filters.areas.includes(city)) continue
+        if (!stats[city]) stats[city] = { correct: 0, total: 0 }
+        stats[city].total++
+        const hit = realAlerts.some(ra => {
+          const diff = new Date(ra.savedAt).getTime() - nfTime
+          return diff >= 0 && diff <= WINDOW_MS && ra.cities.includes(city)
+        })
+        if (hit) stats[city].correct++
+      }
+
+      // Yield to UI every 10 items
+      if (i % 10 === 0) {
+        setRealizationProgress(Math.round((i / newsFlashes.length) * 100))
+        await new Promise(r => setTimeout(r, 0))
+      }
+    }
+
+    for (const city of Object.keys(stats)) {
+      stats[city].ratio = stats[city].total > 0 ? stats[city].correct / stats[city].total : 0
+    }
+
+    setRealizationData(stats)
+    setRealizationProgress(null)
+  }, [rawEvents, filters.areas])
+
+  // KML export
+  const handleExportKml = useCallback(() => {
+    if (!zonesGeoJson) return
+
+    const features = zonesGeoJson.features
+    let placemarks = ''
+
+    // Determine max values for color scaling
+    const counts = filteredHeatmap?.counts || {}
+    const maxCount = Math.max(1, ...Object.values(counts))
+    const ratios = Object.values(realizationData).map(d => d.ratio || 0)
+    const maxRatio = Math.max(0.01, ...ratios)
+
+    for (const feature of features) {
+      const name = feature.properties?.name
+      if (!name) continue
+
+      const count = counts[name] || 0
+      const realData = realizationData[name]
+      const hasData = historyView === 'heatmap' ? count > 0 : !!realData
+
+      if (!hasData) continue
+
+      // Determine color based on current view
+      let color
+      if (historyView === 'realization' && realData) {
+        color = hslToKmlColor(getHeatColor(realData.ratio, maxRatio))
+      } else {
+        color = hslToKmlColor(getHeatColor(count, maxCount))
+      }
+
+      const geom = feature.geometry
+      if (!geom) continue
+
+      let polygonKml = ''
+      if (geom.type === 'Polygon') {
+        const outer = coordsToKml(geom.coordinates[0])
+        polygonKml = `<Polygon><outerBoundaryIs><LinearRing><coordinates>${outer}</coordinates></LinearRing></outerBoundaryIs></Polygon>`
+      } else if (geom.type === 'MultiPolygon') {
+        polygonKml = '<MultiGeometry>'
+        for (const poly of geom.coordinates) {
+          const outer = coordsToKml(poly[0])
+          polygonKml += `<Polygon><outerBoundaryIs><LinearRing><coordinates>${outer}</coordinates></LinearRing></outerBoundaryIs></Polygon>`
+        }
+        polygonKml += '</MultiGeometry>'
+      } else {
+        continue
+      }
+
+      const desc = historyView === 'realization' && realData
+        ? `Realization: ${(realData.ratio * 100).toFixed(1)}% (${realData.correct}/${realData.total})`
+        : `Alerts: ${count}`
+
+      placemarks += `
+    <Placemark>
+      <name>${name}</name>
+      <description>${desc}</description>
+      <Style>
+        <PolyStyle>
+          <color>${color}</color>
+          <outline>1</outline>
+        </PolyStyle>
+        <LineStyle>
+          <color>ff000000</color>
+          <width>1</width>
+        </LineStyle>
+      </Style>
+      ${polygonKml}
+    </Placemark>`
+    }
+
+    const kml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Israel Alerts Map</name>${placemarks}
+  </Document>
+</kml>`
+
+    const blob = new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'israel-alerts-map.kml'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }, [zonesGeoJson, filteredHeatmap, realizationData, historyView])
+
   const renderSidebarContent = () => {
     if (mode === 'live') {
       return <LivePanel currentAlerts={visibleAlerts} lastRefresh={lastRefresh} loading={loading} onAreaClick={setFlyToArea} />
     }
     switch (sidebarTab) {
-      case 'stats':   return <StatsPanel heatmapData={filteredHeatmap} loading={loading} filters={filters} onAreaClick={setFlyToArea} />
+      case 'stats':   return <StatsPanel heatmapData={filteredHeatmap} loading={loading} filters={filters} onAreaClick={setFlyToArea} historyView={historyView} onHistoryViewChange={setHistoryView} realizationData={realizationData} computeRealization={computeRealization} realizationProgress={realizationProgress} />
       case 'events':  return <EventsLog events={filteredEvents} loading={loading} onAreaClick={setFlyToArea} filterAreas={filters.areas} />
       case 'filters': return <FilterPanel {...filters} allAreas={allAreas} onChange={handleFilterChange} />
       default:        return null
@@ -200,7 +397,14 @@ export default function App() {
   return (
     <div className="flex w-screen overflow-hidden font-hebrew bg-slate-900" style={{height:'100dvh'}} dir="rtl">
 
-
+      {/* Floating progress bar for realization computation */}
+      {realizationProgress !== null && (
+        <div className="fixed top-0 left-0 right-0 z-50">
+          <div className="h-1 bg-slate-700">
+            <div className="h-1 bg-amber-400 transition-all" style={{ width: `${realizationProgress}%` }} />
+          </div>
+        </div>
+      )}
 
       {/* -- Desktop Sidebar ------------------------------------------------- */}
       <aside className="hidden md:flex w-80 flex-col bg-slate-800 border-l border-slate-700 z-10 shrink-0" style={{height:'100dvh',overflow:'hidden'}}>
@@ -294,7 +498,7 @@ export default function App() {
 
       {/* -- Map ------------------------------------------------------------- */}
       <main className="flex-1 relative" style={{ marginTop: visibleAlerts.length > 0 ? 64 : 0 }}>
-        <Map heatmapData={heatmapData} currentAlerts={currentAlerts} flyToArea={flyToArea} mode={mode} mapType={mapType} />
+        <Map heatmapData={heatmapData} currentAlerts={currentAlerts} flyToArea={flyToArea} mode={mode} mapType={mapType} historyView={historyView} realizationData={realizationData} />
 
         {/* Mobile top bar */}
         <div className="md:hidden absolute top-3 right-3 left-3 z-20 flex flex-col gap-2">
@@ -411,6 +615,7 @@ export default function App() {
         onMapTypeChange={(t) => { setMapType(t); localStorage.setItem('mapType', t) }}
         demoMode={demoMode}
         onDemoModeChange={setDemoMode}
+        onExportKml={handleExportKml}
       />
 
       {/* Mobile Bottom Sheet */}
@@ -427,7 +632,7 @@ export default function App() {
         {bottomSheetTab === 'live'
           ? <LivePanel currentAlerts={visibleAlerts} lastRefresh={lastRefresh} loading={loading} onAreaClick={setFlyToArea} />
           : bottomSheetTab === 'stats'
-            ? <StatsPanel heatmapData={filteredHeatmap} loading={loading} filters={filters} onAreaClick={setFlyToArea} />
+            ? <StatsPanel heatmapData={filteredHeatmap} loading={loading} filters={filters} onAreaClick={setFlyToArea} historyView={historyView} onHistoryViewChange={setHistoryView} realizationData={realizationData} computeRealization={computeRealization} realizationProgress={realizationProgress} />
             : bottomSheetTab === 'events'
               ? <EventsLog events={filteredEvents} loading={loading} onAreaClick={setFlyToArea} filterAreas={filters.areas} />
               : <FilterPanel {...filters} allAreas={allAreas} onChange={handleFilterChange} />

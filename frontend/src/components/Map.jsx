@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
-import { MapContainer, TileLayer, GeoJSON, useMap } from 'react-leaflet'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { MapContainer, TileLayer, GeoJSON, useMap, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
-import { Locate, Maximize2 } from 'lucide-react'
+import { Locate, Maximize2, Ruler } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
 import { getHeatColor } from '../utils/heatmap'
 import { MAP_TILES, DEFAULT_MAP_TYPE } from '../utils/mapTiles'
@@ -15,7 +15,116 @@ const BTN_STYLE = {
   cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
 }
 
-function MapControls() {
+function haversineDistance([lat1, lon1], [lat2, lon2]) {
+  const R = 6371000
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLon = (lon2 - lon1) * Math.PI / 180
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+function formatDistance(meters) {
+  if (meters < 1000) return `${Math.round(meters)} מ'`
+  return `${(meters / 1000).toFixed(1)} ק"מ`
+}
+
+function RulerTool({ active, onDeactivate }) {
+  const map = useMap()
+  const [points, setPoints] = useState([])
+  const layersRef = useRef([])
+
+  const clearLayers = useCallback(() => {
+    for (const layer of layersRef.current) {
+      map.removeLayer(layer)
+    }
+    layersRef.current = []
+  }, [map])
+
+  // When deactivated, clear everything
+  useEffect(() => {
+    if (!active) {
+      clearLayers()
+      setPoints([])
+      map.getContainer().style.cursor = ''
+    } else {
+      map.getContainer().style.cursor = 'crosshair'
+    }
+    return () => {
+      map.getContainer().style.cursor = ''
+    }
+  }, [active, map, clearLayers])
+
+  useMapEvents({
+    click(e) {
+      if (!active) return
+
+      const latlng = [e.latlng.lat, e.latlng.lng]
+
+      if (points.length === 0) {
+        // First click: place point 1
+        const marker = L.circleMarker(e.latlng, {
+          radius: 5,
+          color: '#3b82f6',
+          fillColor: '#3b82f6',
+          fillOpacity: 1,
+          weight: 2,
+        }).addTo(map)
+        layersRef.current.push(marker)
+        setPoints([latlng])
+      } else if (points.length === 1) {
+        // Second click: place point 2, draw line, show distance
+        const marker = L.circleMarker(e.latlng, {
+          radius: 5,
+          color: '#3b82f6',
+          fillColor: '#3b82f6',
+          fillOpacity: 1,
+          weight: 2,
+        }).addTo(map)
+        layersRef.current.push(marker)
+
+        const line = L.polyline([points[0], latlng], {
+          color: '#3b82f6',
+          weight: 2,
+          dashArray: '6, 6',
+        }).addTo(map)
+        layersRef.current.push(line)
+
+        const dist = haversineDistance(points[0], latlng)
+        const midLat = (points[0][0] + latlng[0]) / 2
+        const midLng = (points[0][1] + latlng[1]) / 2
+
+        const tooltip = L.tooltip({
+          permanent: true,
+          direction: 'top',
+          className: 'ruler-tooltip',
+          offset: [0, -8],
+        })
+          .setLatLng([midLat, midLng])
+          .setContent(`<div style="font-family:Assistant,sans-serif;font-weight:600;font-size:13px;color:#f1f5f9;background:#1e293b;padding:4px 8px;border-radius:6px;border:1px solid #3b82f6">${formatDistance(dist)}</div>`)
+          .addTo(map)
+        layersRef.current.push(tooltip)
+
+        setPoints([latlng, latlng]) // length 2 signals "done"
+      } else {
+        // Third click: reset and start new measurement with this as point 1
+        clearLayers()
+        const marker = L.circleMarker(e.latlng, {
+          radius: 5,
+          color: '#3b82f6',
+          fillColor: '#3b82f6',
+          fillOpacity: 1,
+          weight: 2,
+        }).addTo(map)
+        layersRef.current.push(marker)
+        setPoints([latlng])
+      }
+    },
+  })
+
+  return null
+}
+
+function MapControls({ rulerActive, onToggleRuler }) {
   const map = useMap()
   const [locating,   setLocating]   = useState(false)
   const [atDefault,  setAtDefault]  = useState(true)
@@ -49,6 +158,11 @@ function MapControls() {
     map.flyTo(ISRAEL_CENTER, DEFAULT_ZOOM, { duration: 1.2 })
   }
 
+  const handleRuler = (e) => {
+    e.preventDefault()
+    onToggleRuler()
+  }
+
   return (
     <div className="leaflet-bottom leaflet-right" style={{ marginBottom: '30px', marginRight: '12px' }}>
       <div className="leaflet-control" style={{ border: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -62,6 +176,13 @@ function MapControls() {
         </button>
         <button onClick={handleLocate} title="מיקום נוכחי" style={BTN_STYLE}>
           <Locate size={17} style={{ color: locating ? '#60a5fa' : '#cbd5e1', transition: 'color 0.2s' }} />
+        </button>
+        <button
+          onClick={handleRuler}
+          title="מדידת מרחק"
+          style={{ ...BTN_STYLE, background: rulerActive ? '#2563eb' : '#1e293b', transition: 'background 0.2s' }}
+        >
+          <Ruler size={17} style={{ color: rulerActive ? '#ffffff' : '#cbd5e1', transition: 'color 0.2s' }} />
         </button>
       </div>
     </div>
@@ -101,8 +222,11 @@ function LiveFlyTo({ currentAlerts }) {
   return null
 }
 
-export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapType = DEFAULT_MAP_TYPE }) {
+export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapType = DEFAULT_MAP_TYPE, historyView = 'heatmap', realizationData = {} }) {
   const [zones, setZones] = useState(null)
+  const [rulerActive, setRulerActive] = useState(false)
+
+  const toggleRuler = useCallback(() => setRulerActive(prev => !prev), [])
 
   const [initialCenter, initialZoom] = useMemo(() => {
     try {
@@ -155,6 +279,12 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
       if (!liveAlertMap[city] || a.cat < liveAlertMap[city])
         liveAlertMap[city] = a.cat
 
+  // Compute maxRatio for normalized realization heatmap
+  const maxRatio = useMemo(() => {
+    const values = Object.values(realizationData).map(d => d.ratio)
+    return Math.max(...values, 0.01)
+  }, [realizationData])
+
   function fmtDate(iso) {
     if (!iso) return null
     try {
@@ -187,6 +317,18 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
         weight:      0.3,
       }
     }
+    // Realization view
+    if (historyView === 'realization') {
+      const rd = realizationData[name]
+      if (!rd || rd.total === 0) return {
+        fillColor: '#1e3a5f', fillOpacity: 0.12, color: '#2d4a6b', weight: 0.4,
+      }
+      const norm = rd.ratio / maxRatio
+      const hue = Math.round(120 * (1 - norm))
+      const c = `hsl(${hue}, 85%, 42%)`
+      return { fillColor: c, fillOpacity: 0.72, color: c, weight: 1 }
+    }
+
     const count = counts[name] ?? 0
     if (count === 0) return {
       fillColor:   '#1e3a5f',
@@ -221,6 +363,33 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
       )
       return
     }
+    // Realization tooltip
+    if (historyView === 'realization') {
+      const rd = realizationData[name]
+      if (!rd || rd.total === 0) {
+        layer.bindTooltip(
+          `<div dir="rtl" style="font-family:Assistant,sans-serif;min-width:130px">
+             <div style="font-weight:700;font-size:14px;margin-bottom:4px">${name}</div>
+             <div style="color:#94a3b8;font-size:12px">אין התרעות מקדימות</div>
+           </div>`,
+          { direction: 'top', sticky: false }
+        )
+      } else {
+        const pct = Math.round(rd.ratio * 100)
+        const norm = rd.ratio / maxRatio
+        const hue = Math.round(120 * (1 - norm))
+        layer.bindTooltip(
+          `<div dir="rtl" style="font-family:Assistant,sans-serif;min-width:150px">
+             <div style="font-weight:700;font-size:14px;margin-bottom:4px">${name}</div>
+             <div style="color:hsl(${hue},85%,55%);font-weight:600;font-size:15px">${pct}% מימוש</div>
+             <div style="color:#94a3b8;font-size:11px;margin-top:2px">${rd.correct} מתוך ${rd.total} התרעות מקדימות</div>
+           </div>`,
+          { direction: 'top', sticky: false }
+        )
+      }
+      return
+    }
+
     const count = counts[name] ?? 0
     const last  = fmtDate(lastAlert[name])
     layer.bindTooltip(
@@ -259,7 +428,9 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
   // key forces full re-render when data changes
   const zonesKey = mode === 'live'
     ? `live-${currentAlerts.map(a => a.id).join(',')}-${liveZones.size}`
-    : `zones-${heatmapData?.total ?? 0}-${maxCount}`
+    : historyView === 'realization'
+      ? `real-${Object.keys(realizationData).length}-${heatmapData?.total ?? 0}-${rulerActive}`
+      : `zones-${heatmapData?.total ?? 0}-${maxCount}-${rulerActive}`
 
   return (
     <div dir="ltr" className="w-full h-full">
@@ -277,7 +448,8 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
         subdomains={MAP_TILES[mapType]?.subdomains ?? 'abc'}
       />
 
-      <MapControls />
+      <MapControls rulerActive={rulerActive} onToggleRuler={toggleRuler} />
+      <RulerTool active={rulerActive} onDeactivate={() => setRulerActive(false)} />
       <LiveFlyTo currentAlerts={currentAlerts} />
       <FlyToArea areaName={flyToArea} zones={zones} />
 

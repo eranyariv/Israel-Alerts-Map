@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { X, Mail, ChevronLeft } from 'lucide-react'
+import { X, Mail, ChevronLeft, Download } from 'lucide-react'
 import { MAP_TILES } from '../utils/mapTiles'
 import { VERSION } from '../version'
 
@@ -47,6 +47,7 @@ export default function SettingsPanel({
   isOpen, onClose,
   mapType, onMapTypeChange,
   demoMode, onDemoModeChange,
+  onExportKml,
 }) {
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose() }
@@ -100,6 +101,22 @@ export default function SettingsPanel({
                 ${demoMode ? 'bg-amber-500 border-amber-400' : 'bg-slate-600 border-slate-500'}`}>
                 <div className={`w-4 h-4 rounded-full bg-white shadow transition-transform
                   ${demoMode ? 'translate-x-4' : 'translate-x-0'}`} />
+              </div>
+            </button>
+          </Section>
+
+          {/* Export */}
+          <Section title="ייצוא">
+            <button
+              onClick={() => { onExportKml?.(); onClose() }}
+              disabled={!onExportKml}
+              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl border
+                         bg-slate-700/30 border-slate-700/50 text-slate-300 hover:bg-slate-700/60
+                         hover:text-white transition-colors text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <span>ייצוא פוליגונים ל-KML</span>
+              <div className="flex items-center gap-1.5">
+                <Download size={14} className="text-slate-400" />
               </div>
             </button>
           </Section>
