@@ -161,13 +161,41 @@ if ('serviceWorker' in navigator) {
     .catch(() => {})
 }
 
+// Single reusable Audio element — iOS Safari blocks new Audio() from non-gesture contexts
+// but allows .src change + .play() on an element that was previously played from a gesture
+let _alertAudio = null
+function getAlertAudio() {
+  if (!_alertAudio) {
+    _alertAudio = new Audio()
+    _alertAudio.playsInline = true
+    _alertAudio.setAttribute('playsinline', '')
+  }
+  return _alertAudio
+}
+// Unlock audio on first user interaction (iOS requirement)
+if (typeof document !== 'undefined') {
+  const unlockAudio = () => {
+    const a = getAlertAudio()
+    a.src = `${AUDIO_BASE}alert-test.mp3`
+    a.volume = 0
+    a.play().then(() => { a.pause(); a.volume = 1 }).catch(() => {})
+    document.removeEventListener('touchstart', unlockAudio)
+    document.removeEventListener('click', unlockAudio)
+  }
+  document.addEventListener('touchstart', unlockAudio)
+  document.addEventListener('click', unlockAudio)
+}
+
 function playAlertAudio(key, title) {
   // key: 1-8 (cat number), 'end', or 'test'
   const file = `alert-${key}.mp3`
   const audioUrl = `${AUDIO_BASE}${file}`
 
-  // Always try direct playback first
-  const audio = new Audio(audioUrl)
+  // Reuse single Audio element (critical for iOS Safari)
+  const audio = getAlertAudio()
+  audio.src = audioUrl
+  audio.currentTime = 0
+  audio.volume = 1
   audio.play().catch(() => {})
 
   // Also send OS notification via service worker (works in background)
