@@ -122,6 +122,45 @@ function coordsToKml(ring) {
   return ring.map(([lon, lat]) => `${lon},${lat},0`).join(' ')
 }
 
+function pointInPolygon(point, ring) {
+  const [x, y] = point
+  let inside = false
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i]
+    const [xj, yj] = ring[j]
+    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi))
+      inside = !inside
+  }
+  return inside
+}
+
+function findUserZone(lat, lng, zonesGeoJson) {
+  if (!zonesGeoJson) return null
+  const point = [lng, lat] // GeoJSON coordinates are [lng, lat]
+  for (const feature of zonesGeoJson.features) {
+    const geom = feature.geometry
+    if (geom.type === 'Polygon') {
+      if (pointInPolygon(point, geom.coordinates[0])) return feature.properties.name
+    } else if (geom.type === 'MultiPolygon') {
+      for (const poly of geom.coordinates) {
+        if (pointInPolygon(point, poly[0])) return feature.properties.name
+      }
+    }
+  }
+  return null
+}
+
+function speakHebrew(text) {
+  if (!window.speechSynthesis) return
+  const utterance = new SpeechSynthesisUtterance(text)
+  utterance.lang = 'he-IL'
+  const voices = speechSynthesis.getVoices()
+  const hebrewVoice = voices.find(v => v.lang.startsWith('he') && v.name.toLowerCase().includes('female'))
+    || voices.find(v => v.lang.startsWith('he'))
+  if (hebrewVoice) utterance.voice = hebrewVoice
+  speechSynthesis.speak(utterance)
+}
+
 export default function App() {
   const [mode,            setMode]            = useState(() => localStorage.getItem('viewMode') || 'live')
   const [filters,         setFilters]         = useState(() => {
@@ -152,12 +191,28 @@ export default function App() {
   const [realizationData, setRealizationData] = useState({})
   const [realizationProgress, setRealizationProgress] = useState(null)
   const debugTapRef = useRef({ count: 0, timer: null })
+  const [localAlertEnabled, setLocalAlertEnabled] = useState(() => localStorage.getItem('localAlertEnabled') === 'true')
+  const [localAlertVoice, setLocalAlertVoice] = useState(() => localStorage.getItem('localAlertVoice') === 'true')
+  const [userLocation, setUserLocation] = useState(null) // { lat, lng }
+  const [localBanner, setLocalBanner] = useState(null) // { text, color } or null
+  const prevAlertsRef = useRef([])
 
   const { currentAlerts, heatmapData, rawEvents, loading, error, lastRefresh, refresh, wsConnected, relayHealth } = useAlerts({ source: 'redalert', demoMode })
 
   const catColors = useMemo(() => ({ ...CATEGORY_COLORS, ...customCatColors }), [customCatColors])
   const handleCatColorChange = useCallback((cat, color) => { setCustomCatColors(prev => { const next = { ...prev, [cat]: color }; localStorage.setItem('customCatColors', JSON.stringify(next)); return next }) }, [])
   const handleCatColorsReset = useCallback(() => { setCustomCatColors({}); localStorage.removeItem('customCatColors') }, [])
+
+  const handleLocalAlertToggle = useCallback((enabled) => {
+    setLocalAlertEnabled(enabled)
+    localStorage.setItem('localAlertEnabled', String(enabled))
+    if (!enabled) setUserLocation(null)
+  }, [])
+
+  const handleLocalAlertVoiceToggle = useCallback((enabled) => {
+    setLocalAlertVoice(enabled)
+    localStorage.setItem('localAlertVoice', String(enabled))
+  }, [])
 
   // Load all zone names AND full GeoJSON from geojson file
   useEffect(() => {
@@ -190,6 +245,57 @@ export default function App() {
       tap.timer = setTimeout(() => { tap.count = 0 }, 1500)
     }
   }
+
+  // Geolocation polling for local alerts
+  useEffect(() => {
+    if (!localAlertEnabled || !navigator.geolocation) return
+    let active = true
+    const update = () => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => { if (active) setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }) },
+        () => {},
+        { enableHighAccuracy: false, maximumAge: 30000 }
+      )
+    }
+    update()
+    const timer = setInterval(update, 60_000)
+    return () => { active = false; clearInterval(timer) }
+  }, [localAlertEnabled])
+
+  // Alert change detection for local alerts
+  useEffect(() => {
+    if (!localAlertEnabled || !userLocation || !zonesGeoJson) return
+    const userZone = findUserZone(userLocation.lat, userLocation.lng, zonesGeoJson)
+    if (!userZone) return
+
+    const prev = prevAlertsRef.current
+    const prevIds = new Set(prev.map(a => a.id))
+    const currIds = new Set(currentAlerts.map(a => a.id))
+
+    // New alerts affecting user's zone
+    for (const alert of currentAlerts) {
+      if (!prevIds.has(alert.id) && alert.cities?.includes(userZone)) {
+        const text = `${alert.title || 'התרעה'} באזורך`
+        const color = catColors[alert.cat] || '#ef4444'
+        setLocalBanner({ text, color })
+        if (localAlertVoice) speakHebrew(text)
+        setTimeout(() => setLocalBanner(b => b?.text === text ? null : b), 5000)
+      }
+    }
+
+    // Ended alerts that affected user's zone
+    for (const alert of prev) {
+      if (!currIds.has(alert.id) && alert.cities?.includes(userZone)) {
+        const text = 'האירוע באזורך הסתיים'
+        const color = '#22c55e'
+        setLocalBanner({ text, color })
+        if (localAlertVoice) speakHebrew(text)
+        setTimeout(() => setLocalBanner(b => b?.text === text ? null : b), 5000)
+      }
+    }
+
+    prevAlertsRef.current = [...currentAlerts]
+  }, [currentAlerts, localAlertEnabled, userLocation, zonesGeoJson, catColors, localAlertVoice])
 
   // Initial load
   useEffect(() => { refresh(filters) }, []) // eslint-disable-line
@@ -411,6 +517,15 @@ export default function App() {
         </div>
       )}
 
+      {/* Local alert banner */}
+      {localBanner && (
+        <div className="fixed top-0 left-0 right-0 z-[60]" style={{ backgroundColor: localBanner.color, transition: 'opacity 0.3s ease-in' }}>
+          <div className="flex items-center justify-center px-4 py-3 text-white font-bold text-lg" dir="rtl">
+            {localBanner.text}
+          </div>
+        </div>
+      )}
+
       {/* -- Desktop Sidebar ------------------------------------------------- */}
       <aside className="hidden md:flex w-80 flex-col bg-slate-800 border-l border-slate-700 z-10 shrink-0" style={{height:'100dvh',overflow:'hidden'}}>
 
@@ -625,6 +740,10 @@ export default function App() {
         customCatColors={customCatColors}
         onCatColorChange={handleCatColorChange}
         onCatColorsReset={handleCatColorsReset}
+        localAlertEnabled={localAlertEnabled}
+        onLocalAlertToggle={handleLocalAlertToggle}
+        localAlertVoice={localAlertVoice}
+        onLocalAlertVoiceToggle={handleLocalAlertVoiceToggle}
       />
 
       {/* Mobile Bottom Sheet */}

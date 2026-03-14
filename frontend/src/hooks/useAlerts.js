@@ -178,19 +178,52 @@ export function useAlerts({ source = 'oref', demoMode = false } = {}) {
   // ── Live: poll relay /active every 5 s ────────────────────────────────────
 
   useEffect(() => {
-    // Demo mode: fetch static sample from relay once
+    // Demo mode: cycle through alert types, one every 15s, then endAlert, then next type
     if (demoMode) {
       if (!RELAY_URL) { log.warn('[demo] VITE_RA_RELAY_URL not configured'); return }
+      let active = true
+      let demoAlerts = []
+      let timer = null
+
+      // Fetch all demo alerts once, then cycle
       log.info(`[demo] fetching ${RELAY_URL}/demo`)
       fetch(`${RELAY_URL}/demo`, { cache: 'no-store' })
         .then(r => r.json())
         .then(data => {
-          log.success(`[demo] received ${data.length} sample alerts`)
-          setCurrentAlerts((Array.isArray(data) ? data : []).map(parseAlertItem).filter(Boolean))
-          setLastRefresh(new Date())
+          if (!active) return
+          demoAlerts = (Array.isArray(data) ? data : []).map(parseAlertItem).filter(Boolean)
+          log.success(`[demo] received ${demoAlerts.length} alert types for cycling`)
+
+          const typeOrder = [1, 6, 4, 2, 3, 5, 7, 8] // missiles, radiological, earthquake, aircraft, infiltration, newsFlash, tsunami, hazmat
+          let idx = 0
+          let showingAlert = false
+
+          function tick() {
+            if (!active) return
+            if (!showingAlert) {
+              // Show next alert type
+              const cat = typeOrder[idx % typeOrder.length]
+              const alert = demoAlerts.find(a => a.cat === cat) || demoAlerts[idx % demoAlerts.length]
+              setCurrentAlerts([alert])
+              setLastRefresh(new Date())
+              log.info(`[demo] showing alert cat=${cat}: ${alert.title}`)
+              showingAlert = true
+            } else {
+              // EndAlert — clear
+              setCurrentAlerts([])
+              setLastRefresh(new Date())
+              log.info(`[demo] endAlert`)
+              showingAlert = false
+              idx++
+            }
+            timer = setTimeout(tick, 15_000)
+          }
+
+          tick()
         })
         .catch(e => log.warn('[demo] fetch failed', e.message))
-      return
+
+      return () => { active = false; clearTimeout(timer) }
     }
 
     if (!RELAY_URL) { log.warn('[relay] VITE_RA_RELAY_URL not configured'); return }

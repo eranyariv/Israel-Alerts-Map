@@ -169,8 +169,7 @@ function MapControls({ rulerActive, onToggleRuler }) {
         <button
           onClick={handleReset}
           title="חזרה לתצוגת ישראל"
-          disabled={atDefault}
-          style={{ ...BTN_STYLE, cursor: atDefault ? 'default' : 'pointer', opacity: atDefault ? 0.35 : 1, transition: 'opacity 0.2s' }}
+          style={{ ...BTN_STYLE, cursor: 'pointer', transition: 'opacity 0.2s' }}
         >
           <Maximize2 size={17} style={{ color: '#cbd5e1' }} />
         </button>
