@@ -1,23 +1,25 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { RefreshCw, SlidersHorizontal, BarChart2, Shield, Settings } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { RefreshCw, SlidersHorizontal, BarChart2, Shield, Settings, ScrollText } from 'lucide-react'
 import { formatTime } from './utils/dateFormat'
 import { ALL_CATEGORIES } from './utils/heatmap'
 
 import Map from './components/Map'
 import FilterPanel from './components/FilterPanel'
 import StatsPanel from './components/StatsPanel'
+import EventsLog from './components/EventsLog'
 import LivePanel from './components/LivePanel'
 import AlertBanner from './components/AlertBanner'
 import BottomSheet from './components/BottomSheet'
 import DebugPanel from './components/DebugPanel'
 import SettingsPanel from './components/SettingsPanel'
-import { useAlerts } from './hooks/useAlerts'
+import { useAlerts, buildHeatmap } from './hooks/useAlerts'
 import { VERSION } from './version'
 import { DEFAULT_MAP_TYPE } from './utils/mapTiles'
 
 const HISTORY_TABS = [
-  { id: 'stats',   label: 'סטטיסטיקה', Icon: BarChart2 },
-  { id: 'filters', label: 'סינון',      Icon: SlidersHorizontal },
+  { id: 'stats',   label: 'סטטיסטיקה',    Icon: BarChart2 },
+  { id: 'events',  label: 'יומן ארועים',   Icon: ScrollText },
+  { id: 'filters', label: 'סינון',          Icon: SlidersHorizontal },
 ]
 
 function defaultFrom() { const d = new Date(); d.setMonth(d.getMonth() - 3); return d }
@@ -79,11 +81,12 @@ export default function App() {
       const s = JSON.parse(localStorage.getItem('historyFilters'))
       if (s) return {
         categories: Array.isArray(s.categories) ? s.categories : ALL_CATEGORIES,
-        from: s.from ? new Date(s.from) : defaultFrom(),
-        to:   s.to   ? new Date(s.to)   : defaultTo(),
+        from: defaultFrom(),
+        to:   defaultTo(),
+        areas: Array.isArray(s.areas) && s.areas.length > 0 ? s.areas : null,
       }
     } catch {}
-    return { categories: ALL_CATEGORIES, from: defaultFrom(), to: defaultTo() }
+    return { categories: ALL_CATEGORIES, from: defaultFrom(), to: defaultTo(), areas: null }
   })
   const [dismissedId,     setDismissedId]     = useState(null)
   const [sidebarTab,      setSidebarTab]      = useState('stats')
@@ -94,9 +97,21 @@ export default function App() {
   const [settingsOpen,    setSettingsOpen]    = useState(false)
   const [mapType,         setMapType]         = useState(() => localStorage.getItem('mapType') || DEFAULT_MAP_TYPE)
   const [demoMode,        setDemoMode]        = useState(false)
+  const [allAreas,        setAllAreas]        = useState([])
   const debugTapRef = useRef({ count: 0, timer: null })
 
-  const { currentAlerts, heatmapData, loading, error, lastRefresh, refresh, wsConnected, relayHealth } = useAlerts({ source: 'redalert', demoMode })
+  const { currentAlerts, heatmapData, rawEvents, loading, error, lastRefresh, refresh, wsConnected, relayHealth } = useAlerts({ source: 'redalert', demoMode })
+
+  // Load all zone names from GeoJSON for area filter autocomplete
+  useEffect(() => {
+    fetch(`${import.meta.env.BASE_URL}alertZones.geojson`)
+      .then(r => r.json())
+      .then(data => {
+        const names = data.features.map(f => f.properties.name).filter(Boolean).sort()
+        setAllAreas(names)
+      })
+      .catch(() => {})
+  }, [])
 
   // Toggle debug with backtick key (works on desktop + physical keyboards on mobile)
   useEffect(() => {
@@ -124,11 +139,16 @@ export default function App() {
   const handleRefresh = () => mode !== 'live' && refresh(filters)
   const handleFilterChange = (next) => {
     setFilters(next)
-    refresh(next)
+    // Only re-fetch from API if categories or dates changed (not just areas)
+    const catsChanged  = JSON.stringify(next.categories) !== JSON.stringify(filters.categories)
+    const datesChanged = next.from?.toISOString() !== filters.from?.toISOString() ||
+                         next.to?.toISOString()   !== filters.to?.toISOString()
+    if (catsChanged || datesChanged) {
+      refresh(next)
+    }
     localStorage.setItem('historyFilters', JSON.stringify({
       categories: next.categories,
-      from: next.from?.toISOString(),
-      to:   next.to?.toISOString(),
+      areas: next.areas,
     }))
   }
 
@@ -141,13 +161,32 @@ export default function App() {
     localStorage.setItem('viewMode', next)
   }, [])
 
+  // Area-filtered heatmap for stats panel (map always shows all data)
+  const filteredHeatmap = useMemo(() => {
+    if (!filters.areas || filters.areas.length === 0) return heatmapData
+    const areaSet = new Set(filters.areas)
+    const filtered = rawEvents.filter(e => e.cities.some(c => areaSet.has(c)))
+    if (filtered.length === 0) return { cities: [], max_count: 0, total: 0, by_cat: {}, counts: {}, lastAlert: {}, byCity: {} }
+    // Filter cities within each event to only selected areas
+    const mapped = filtered.map(e => ({ ...e, cities: e.cities.filter(c => areaSet.has(c)) }))
+    return buildHeatmap(mapped)
+  }, [heatmapData, rawEvents, filters.areas])
+
+  // Area-filtered events for events log
+  const filteredEvents = useMemo(() => {
+    if (!filters.areas || filters.areas.length === 0) return rawEvents
+    const areaSet = new Set(filters.areas)
+    return rawEvents.filter(e => e.cities.some(c => areaSet.has(c)))
+  }, [rawEvents, filters.areas])
+
   const renderSidebarContent = () => {
     if (mode === 'live') {
       return <LivePanel currentAlerts={visibleAlerts} lastRefresh={lastRefresh} loading={loading} onAreaClick={setFlyToArea} />
     }
     switch (sidebarTab) {
-      case 'stats':   return <StatsPanel heatmapData={heatmapData} loading={loading} filters={filters} onAreaClick={setFlyToArea} />
-      case 'filters': return <FilterPanel {...filters} onChange={handleFilterChange} />
+      case 'stats':   return <StatsPanel heatmapData={filteredHeatmap} loading={loading} filters={filters} onAreaClick={setFlyToArea} />
+      case 'events':  return <EventsLog events={filteredEvents} loading={loading} onAreaClick={setFlyToArea} filterAreas={filters.areas} />
+      case 'filters': return <FilterPanel {...filters} allAreas={allAreas} onChange={handleFilterChange} />
       default:        return null
     }
   }
@@ -155,14 +194,15 @@ export default function App() {
   const hasCustomFilters =
     filters.categories.length !== ALL_CATEGORIES.length ||
     filters.from?.toDateString() !== defaultFrom().toDateString() ||
-    filters.to?.toDateString()   !== defaultTo().toDateString()
+    filters.to?.toDateString()   !== defaultTo().toDateString() ||
+    (filters.areas && filters.areas.length > 0)
 
   return (
     <div className="flex w-screen overflow-hidden font-hebrew bg-slate-900" style={{height:'100dvh'}} dir="rtl">
 
 
 
-      {/* ── Desktop Sidebar ─────────────────────────────────────────── */}
+      {/* -- Desktop Sidebar ------------------------------------------------- */}
       <aside className="hidden md:flex w-80 flex-col bg-slate-800 border-l border-slate-700 z-10 shrink-0" style={{height:'100dvh',overflow:'hidden'}}>
 
         {/* Logo + Refresh */}
@@ -252,7 +292,7 @@ export default function App() {
         </div>
       </aside>
 
-      {/* ── Map ─────────────────────────────────────────────────────── */}
+      {/* -- Map ------------------------------------------------------------- */}
       <main className="flex-1 relative" style={{ marginTop: visibleAlerts.length > 0 ? 64 : 0 }}>
         <Map heatmapData={heatmapData} currentAlerts={currentAlerts} flyToArea={flyToArea} mode={mode} mapType={mapType} />
 
@@ -306,6 +346,13 @@ export default function App() {
                          justify-center text-slate-300 border border-slate-700 touch-manipulation"
             >
               <BarChart2 size={20} />
+            </button>
+            <button
+              onClick={() => openBottomSheet('events')}
+              className="w-12 h-12 rounded-full bg-slate-800 shadow-lg flex items-center
+                         justify-center text-slate-300 border border-slate-700 touch-manipulation"
+            >
+              <ScrollText size={20} />
             </button>
             <button
               onClick={() => openBottomSheet('filters')}
@@ -373,14 +420,17 @@ export default function App() {
         title={
           bottomSheetTab === 'live'    ? 'מצב חי' :
           bottomSheetTab === 'stats'   ? 'סטטיסטיקה' :
+          bottomSheetTab === 'events'  ? 'יומן ארועים' :
           bottomSheetTab === 'filters' ? 'סינון' : ''
         }
       >
         {bottomSheetTab === 'live'
           ? <LivePanel currentAlerts={visibleAlerts} lastRefresh={lastRefresh} loading={loading} onAreaClick={setFlyToArea} />
           : bottomSheetTab === 'stats'
-            ? <StatsPanel heatmapData={heatmapData} loading={loading} filters={filters} onAreaClick={setFlyToArea} />
-            : <FilterPanel {...filters} onChange={handleFilterChange} />
+            ? <StatsPanel heatmapData={filteredHeatmap} loading={loading} filters={filters} onAreaClick={setFlyToArea} />
+            : bottomSheetTab === 'events'
+              ? <EventsLog events={filteredEvents} loading={loading} onAreaClick={setFlyToArea} filterAreas={filters.areas} />
+              : <FilterPanel {...filters} allAreas={allAreas} onChange={handleFilterChange} />
         }
       </BottomSheet>
     </div>

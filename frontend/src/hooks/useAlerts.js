@@ -93,7 +93,7 @@ async function fetchRedAlertHeatmap(from, to, categories = []) {
     if (!cat) return []
     const cities = (item.cities ?? []).map(c => c.name ?? c).filter(Boolean)
     if (!cities.length) return []
-    return [{ id: String(item.id), cat, title: CAT_TITLES[cat] ?? 'התרעה', cities, savedAt: item.timestamp }]
+    return [{ id: String(item.id), cat, title: CAT_TITLES[cat] ?? 'התרעה', cities, savedAt: item.timestamp, endedAt: item.endedAt ?? null }]
   })
 
   const MERGE_WINDOW_MS = 4 * 60 * 1000
@@ -113,6 +113,8 @@ async function fetchRedAlertHeatmap(from, to, categories = []) {
         merged.push(group)
       } else {
         group._lastTs = Math.max(group._lastTs, ts)
+        if (alert.endedAt && (!group.endedAt || alert.endedAt > group.endedAt))
+          group.endedAt = alert.endedAt
         for (const city of alert.cities)
           if (!group.cities.includes(city)) group.cities.push(city)
       }
@@ -121,7 +123,7 @@ async function fetchRedAlertHeatmap(from, to, categories = []) {
   merged.forEach(a => delete a._lastTs)
 
   log.success(`[relay] history: ${allAlerts.length} records → ${merged.length} events after 4-min merge`)
-  return buildHeatmap(merged)
+  return { heatmap: buildHeatmap(merged), mergedAlerts: merged }
 }
 
 async function fetchStaticHistory() {
@@ -134,7 +136,7 @@ async function fetchStaticHistory() {
   return data
 }
 
-function buildHeatmap(history) {
+export function buildHeatmap(history) {
   const counts    = {}
   const lastAlert = {}
   const byCity    = {}
@@ -166,6 +168,7 @@ function buildHeatmap(history) {
 export function useAlerts({ source = 'oref', demoMode = false } = {}) {
   const [currentAlerts, setCurrentAlerts] = useState([])
   const [heatmapData,   setHeatmapData]   = useState({ cities: [], max_count: 0, total: 0, by_cat: {} })
+  const [rawEvents,     setRawEvents]     = useState([])
   const [loading,       setLoading]       = useState(false)
   const [error,         setError]         = useState(null)
   const [lastRefresh,   setLastRefresh]   = useState(null)
@@ -265,8 +268,9 @@ export function useAlerts({ source = 'oref', demoMode = false } = {}) {
 
     try {
       if (source === 'redalert') {
-        const heatmap = await fetchRedAlertHeatmap(from, to, categories)
+        const { heatmap, mergedAlerts } = await fetchRedAlertHeatmap(from, to, categories)
         setHeatmapData(heatmap)
+        setRawEvents(mergedAlerts)
       } else {
         const staticRaw = await fetchStaticHistory().catch(e => { log.error('[fetch] static archive threw', e.message); return null })
 
@@ -308,7 +312,7 @@ export function useAlerts({ source = 'oref', demoMode = false } = {}) {
   }, [source])
 
   return {
-    currentAlerts, heatmapData, loading, error, lastRefresh,
+    currentAlerts, heatmapData, rawEvents, loading, error, lastRefresh,
     refresh, wsConnected, relayHealth,
   }
 }

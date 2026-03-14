@@ -6,7 +6,7 @@ properties:
       - name: ra-http-key
         value: "pr_MOWrCRNqKRojDStFFrUMPfHtOChYhoQkgDiwMnnJqEtwOLCJXBbMlBimmENyjjmf"
   template:
-    revisionSuffix: v1-11
+    revisionSuffix: v1-12
     containers:
       - name: redalert-relay
         image: redalertrelay.azurecr.io/redalert-relay:latest

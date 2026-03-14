@@ -527,6 +527,7 @@ app.get('/api/history', (req, res) => {
       title:     e.title,
       cities:    e.cities,
       timestamp: e.startedAt,
+      endedAt:   e.endedAt ?? null,
     }))
 
   console.log(`[api/history] returning ${data.length} items`)
@@ -656,6 +657,23 @@ app.get('/history', (req, res) => {
               border-radius: .5rem; cursor: pointer; transition: background .15s }
   #btn-more:hover:not(:disabled) { background: #334155; color: #f1f5f9 }
   #btn-more:disabled { opacity: .45; cursor: default }
+
+  .search-bar { display: flex; gap: .5rem; margin-bottom: 1.25rem; align-items: center }
+  .search-bar input { flex: 1; background: #1e293b; border: 1px solid #334155; color: #e2e8f0;
+                      border-radius: .5rem; padding: .55rem 1rem; font-size: .88rem;
+                      outline: none; transition: border-color .15s; direction: rtl }
+  .search-bar input::placeholder { color: #475569 }
+  .search-bar input:focus { border-color: #3b82f6 }
+  .search-bar button { background: #1d4ed8; color: #bfdbfe; border: 1px solid #3b82f6;
+                        border-radius: .5rem; padding: .55rem 1.1rem; font-size: .82rem;
+                        font-weight: 600; cursor: pointer; white-space: nowrap;
+                        transition: background .15s }
+  .search-bar button:hover { background: #2563eb }
+  .search-bar .btn-clear { background: #1e293b; color: #94a3b8; border-color: #334155 }
+  .search-bar .btn-clear:hover { background: #334155; color: #f1f5f9 }
+  .search-active { font-size: .82rem; color: #60a5fa; margin-bottom: 1rem;
+                   padding: .5rem .85rem; background: #1e293b; border: 1px solid #1d4ed8;
+                   border-radius: .4rem; display: inline-block }
 </style>
 </head>
 <body>
@@ -664,6 +682,13 @@ app.get('/history', (req, res) => {
   <span class="count" id="shown-count">loading…</span>
   <a href="/">← back to API docs</a>
 </p>
+
+<div class="search-bar">
+  <input id="search-input" type="text" placeholder="Search area name… (e.g. תל אביב)" />
+  <button id="btn-search" onclick="doSearch()">Search</button>
+  <button id="btn-clear-search" class="btn-clear" onclick="clearSearch()" style="display:none">Clear</button>
+</div>
+<div id="search-info" style="display:none"></div>
 
 <table>
   <thead>
@@ -693,6 +718,37 @@ app.get('/history', (req, res) => {
   }
 
   let offset = 0
+  let searchTerm = ''
+
+  function doSearch() {
+    const val = document.getElementById('search-input').value.trim()
+    if (!val) return
+    searchTerm = val
+    offset = 0
+    document.getElementById('tbody').innerHTML = ''
+    document.getElementById('btn-clear-search').style.display = ''
+    document.getElementById('search-info').style.display = ''
+    document.getElementById('search-info').className = 'search-active'
+    document.getElementById('search-info').textContent = 'Searching for: ' + val + '…'
+    loadMore()
+  }
+
+  function clearSearch() {
+    searchTerm = ''
+    offset = 0
+    document.getElementById('search-input').value = ''
+    document.getElementById('tbody').innerHTML = ''
+    document.getElementById('btn-clear-search').style.display = 'none'
+    document.getElementById('search-info').style.display = 'none'
+    loadMore()
+  }
+
+  // Enter key triggers search
+  document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('search-input').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') doSearch()
+    })
+  })
 
   function fmtTime(iso) {
     if (!iso) return '—'
@@ -727,8 +783,14 @@ app.get('/history', (req, res) => {
         : '<span class="badge badge-ended">ENDED</span>'
       const cities   = Array.isArray(e.cities) ? e.cities : []
       const cityList = cities.length
-        ? \`<details><summary>\${cities.length} area\${cities.length !== 1 ? 's' : ''}</summary>
-             <ul>\${cities.map(c => \`<li>\${c}</li>\`).join('')}</ul></details>\`
+        ? \`<details\${searchTerm ? ' open' : ''}><summary>\${cities.length} area\${cities.length !== 1 ? 's' : ''}</summary>
+             <ul>\${cities.map(c => {
+               if (searchTerm && c.includes(searchTerm)) {
+                 const hl = c.replace(searchTerm, \`<strong style="color:#facc15">\${searchTerm}</strong>\`)
+                 return \`<li>\${hl}</li>\`
+               }
+               return \`<li>\${c}</li>\`
+             }).join('')}</ul></details>\`
         : '<span class="none">—</span>'
 
       const tr = document.createElement('tr')
@@ -744,10 +806,10 @@ app.get('/history', (req, res) => {
 
     // Add or re-add load-more row
     offset += events.length
-    updateFooter()
+    updateFooter(events.length)
   }
 
-  function updateFooter() {
+  function updateFooter(batchSize) {
     const tbody = document.getElementById('tbody')
     let row = document.getElementById('load-more-row')
     if (!row) {
@@ -757,22 +819,38 @@ app.get('/history', (req, res) => {
       tbody.appendChild(row)
     }
     const td = row.querySelector('td')
-    if (offset >= TOTAL) {
-      td.innerHTML = \`<span style="color:#475569;font-size:.8rem">All \${TOTAL} events shown</span>\`
+    if (searchTerm) {
+      // In search mode we don't know total — show "load more" if last batch was full
+      if (batchSize < PAGE) {
+        td.innerHTML = \`<span style="color:#475569;font-size:.8rem">\${offset} matching events shown</span>\`
+      } else {
+        td.innerHTML = \`<button id="btn-more" onclick="loadMore()">Load more matches…</button>\`
+      }
+      document.getElementById('shown-count').textContent = \`\${offset} matching events\`
     } else {
-      td.innerHTML = \`<button id="btn-more" onclick="loadMore()">Show 100 more (\${TOTAL - offset} remaining)</button>\`
+      if (offset >= TOTAL) {
+        td.innerHTML = \`<span style="color:#475569;font-size:.8rem">All \${TOTAL} events shown</span>\`
+      } else {
+        td.innerHTML = \`<button id="btn-more" onclick="loadMore()">Show 100 more (\${TOTAL - offset} remaining)</button>\`
+      }
+      document.getElementById('shown-count').textContent =
+        \`Showing \${offset} of \${TOTAL} event\${TOTAL !== 1 ? 's' : ''}\`
     }
-    document.getElementById('shown-count').textContent =
-      \`Showing \${offset} of \${TOTAL} event\${TOTAL !== 1 ? 's' : ''}\`
   }
 
   async function loadMore() {
     const btn = document.getElementById('btn-more')
     if (btn) { btn.disabled = true; btn.textContent = 'Loading…' }
     try {
-      const res  = await fetch(\`/history.json?offset=\${offset}&limit=\${PAGE}\`)
+      let url = \`/history.json?offset=\${offset}&limit=\${PAGE}\`
+      if (searchTerm) url += \`&search=\${encodeURIComponent(searchTerm)}\`
+      const res  = await fetch(url)
       const data = await res.json()
       renderRows(data)
+      if (searchTerm) {
+        const info = document.getElementById('search-info')
+        info.textContent = \`Filter: "\${searchTerm}" — \${offset} matching event\${offset !== 1 ? 's' : ''} loaded\`
+      }
     } catch (e) {
       if (btn) { btn.disabled = false; btn.textContent = 'Retry' }
     }
@@ -840,9 +918,13 @@ app.get('/demo', (req, res) => {
   ])
 })
 
-// History as JSON — sorted newest first, supports ?offset=N&limit=N for pagination
+// History as JSON — sorted newest first, supports ?offset=N&limit=N&search=TERM for pagination + area search
 app.get('/history.json', (req, res) => {
-  const all    = [...alertHistory].sort((a, b) => (b.startedAt || '').localeCompare(a.startedAt || ''))
+  let all = [...alertHistory].sort((a, b) => (b.startedAt || '').localeCompare(a.startedAt || ''))
+  const search = (req.query.search || '').trim()
+  if (search) {
+    all = all.filter(e => Array.isArray(e.cities) && e.cities.some(c => c.includes(search)))
+  }
   const offset = Math.max(0, parseInt(req.query.offset ?? '0', 10) || 0)
   const limit  = Math.max(0, parseInt(req.query.limit  ?? '0', 10) || 0)
   res.json(limit > 0 ? all.slice(offset, offset + limit) : all)
