@@ -150,22 +150,39 @@ function findUserZone(lat, lng, zonesGeoJson) {
   return null
 }
 
+// Warm up speechSynthesis on first user interaction (browsers block TTS until a gesture)
+let _ttsWarmedUp = false
+function warmUpTts() {
+  if (_ttsWarmedUp || !window.speechSynthesis) return
+  _ttsWarmedUp = true
+  const u = new SpeechSynthesisUtterance('')
+  u.volume = 0
+  speechSynthesis.speak(u)
+  speechSynthesis.cancel()
+}
+if (typeof document !== 'undefined') {
+  document.addEventListener('click', warmUpTts, { once: true })
+  document.addEventListener('touchstart', warmUpTts, { once: true })
+}
+
 function speakHebrew(text) {
   if (!window.speechSynthesis) return
   const doSpeak = () => {
-    const utterance = new SpeechSynthesisUtterance(text)
-    utterance.lang = 'he-IL'
-    utterance.rate = 1.0
-    utterance.volume = 1.0
-    const voices = speechSynthesis.getVoices()
-    const hebrewVoice = voices.find(v => v.lang.startsWith('he') && v.name.toLowerCase().includes('female'))
-      || voices.find(v => v.lang.startsWith('he'))
-      || voices.find(v => v.lang === 'he-IL')
-    if (hebrewVoice) utterance.voice = hebrewVoice
-    speechSynthesis.cancel() // stop any current speech
-    speechSynthesis.speak(utterance)
+    speechSynthesis.cancel()
+    // Small delay after cancel to avoid browser suppression
+    setTimeout(() => {
+      const utterance = new SpeechSynthesisUtterance(text)
+      utterance.lang = 'he-IL'
+      utterance.rate = 1.0
+      utterance.volume = 1.0
+      const voices = speechSynthesis.getVoices()
+      const hebrewVoice = voices.find(v => v.lang.startsWith('he') && v.name.toLowerCase().includes('female'))
+        || voices.find(v => v.lang.startsWith('he'))
+        || voices.find(v => v.lang === 'he-IL')
+      if (hebrewVoice) utterance.voice = hebrewVoice
+      speechSynthesis.speak(utterance)
+    }, 100)
   }
-  // getVoices() may return [] until voiceschanged fires
   if (speechSynthesis.getVoices().length > 0) {
     doSpeak()
   } else {
@@ -279,9 +296,9 @@ export default function App() {
     return () => { active = false; clearInterval(timer) }
   }, [localAlertEnabled, demoMode])
 
-  // Alert change detection for local alerts
+  // Alert change detection for local alerts (works in both live+localAlert and demo mode)
   useEffect(() => {
-    if (!localAlertEnabled || !userLocation || !zonesGeoJson) return
+    if ((!localAlertEnabled && !demoMode) || !userLocation || !zonesGeoJson) return
     const userZone = findUserZone(userLocation.lat, userLocation.lng, zonesGeoJson)
     if (!userZone) return
 
@@ -312,7 +329,7 @@ export default function App() {
     }
 
     prevAlertsRef.current = [...currentAlerts]
-  }, [currentAlerts, localAlertEnabled, userLocation, zonesGeoJson, catColors, localAlertVoice])
+  }, [currentAlerts, localAlertEnabled, demoMode, userLocation, zonesGeoJson, catColors, localAlertVoice])
 
   // Initial load
   useEffect(() => { refresh(filters) }, []) // eslint-disable-line
