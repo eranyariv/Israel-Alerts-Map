@@ -150,44 +150,34 @@ function findUserZone(lat, lng, zonesGeoJson) {
   return null
 }
 
-// Warm up speechSynthesis on first user interaction (browsers block TTS until a gesture)
-let _ttsWarmedUp = false
-function warmUpTts() {
-  if (_ttsWarmedUp || !window.speechSynthesis) return
-  _ttsWarmedUp = true
-  const u = new SpeechSynthesisUtterance('')
-  u.volume = 0
-  speechSynthesis.speak(u)
-  speechSynthesis.cancel()
+// TTS: use a persistent AudioContext to keep audio unlocked, and queue speech via it
+let _audioCtx = null
+function ensureAudioContext() {
+  if (!_audioCtx && typeof AudioContext !== 'undefined') {
+    _audioCtx = new AudioContext()
+  }
+  if (_audioCtx?.state === 'suspended') _audioCtx.resume()
 }
 if (typeof document !== 'undefined') {
-  document.addEventListener('click', warmUpTts, { once: true })
-  document.addEventListener('touchstart', warmUpTts, { once: true })
+  const unlock = () => { ensureAudioContext(); document.removeEventListener('click', unlock); document.removeEventListener('touchstart', unlock) }
+  document.addEventListener('click', unlock)
+  document.addEventListener('touchstart', unlock)
 }
 
 function speakHebrew(text) {
   if (!window.speechSynthesis) return
-  const doSpeak = () => {
-    speechSynthesis.cancel()
-    // Small delay after cancel to avoid browser suppression
-    setTimeout(() => {
-      const utterance = new SpeechSynthesisUtterance(text)
-      utterance.lang = 'he-IL'
-      utterance.rate = 1.0
-      utterance.volume = 1.0
-      const voices = speechSynthesis.getVoices()
-      const hebrewVoice = voices.find(v => v.lang.startsWith('he') && v.name.toLowerCase().includes('female'))
-        || voices.find(v => v.lang.startsWith('he'))
-        || voices.find(v => v.lang === 'he-IL')
-      if (hebrewVoice) utterance.voice = hebrewVoice
-      speechSynthesis.speak(utterance)
-    }, 100)
-  }
-  if (speechSynthesis.getVoices().length > 0) {
-    doSpeak()
-  } else {
-    speechSynthesis.addEventListener('voiceschanged', doSpeak, { once: true })
-  }
+  ensureAudioContext()
+  const utterance = new SpeechSynthesisUtterance(text)
+  utterance.lang = 'he-IL'
+  utterance.rate = 1.0
+  utterance.volume = 1.0
+  const voices = speechSynthesis.getVoices()
+  const hebrewVoice = voices.find(v => v.lang.startsWith('he') && v.name.toLowerCase().includes('female'))
+    || voices.find(v => v.lang.startsWith('he'))
+    || voices.find(v => v.lang === 'he-IL')
+  if (hebrewVoice) utterance.voice = hebrewVoice
+  // Don't cancel — just queue
+  speechSynthesis.speak(utterance)
 }
 
 export default function App() {
@@ -246,6 +236,8 @@ export default function App() {
   const handleLocalAlertVoiceToggle = useCallback((enabled) => {
     setLocalAlertVoice(enabled)
     localStorage.setItem('localAlertVoice', String(enabled))
+    // Speak test phrase immediately from user gesture to unlock TTS
+    if (enabled) speakHebrew('חיווי קולי הופעל')
   }, [])
 
   // Load all zone names AND full GeoJSON from geojson file
