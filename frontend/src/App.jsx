@@ -150,34 +150,13 @@ function findUserZone(lat, lng, zonesGeoJson) {
   return null
 }
 
-// TTS: use a persistent AudioContext to keep audio unlocked, and queue speech via it
-let _audioCtx = null
-function ensureAudioContext() {
-  if (!_audioCtx && typeof AudioContext !== 'undefined') {
-    _audioCtx = new AudioContext()
-  }
-  if (_audioCtx?.state === 'suspended') _audioCtx.resume()
-}
-if (typeof document !== 'undefined') {
-  const unlock = () => { ensureAudioContext(); document.removeEventListener('click', unlock); document.removeEventListener('touchstart', unlock) }
-  document.addEventListener('click', unlock)
-  document.addEventListener('touchstart', unlock)
-}
-
-function speakHebrew(text) {
-  if (!window.speechSynthesis) return
-  ensureAudioContext()
-  const utterance = new SpeechSynthesisUtterance(text)
-  utterance.lang = 'he-IL'
-  utterance.rate = 1.0
-  utterance.volume = 1.0
-  const voices = speechSynthesis.getVoices()
-  const hebrewVoice = voices.find(v => v.lang.startsWith('he') && v.name.toLowerCase().includes('female'))
-    || voices.find(v => v.lang.startsWith('he'))
-    || voices.find(v => v.lang === 'he-IL')
-  if (hebrewVoice) utterance.voice = hebrewVoice
-  // Don't cancel — just queue
-  speechSynthesis.speak(utterance)
+// Pre-recorded audio alerts: alert-1.mp3 .. alert-8.mp3, alert-end.mp3, alert-test.mp3
+const AUDIO_BASE = `${import.meta.env.BASE_URL}audio/`
+function playAlertAudio(key) {
+  // key: 1-8 (cat number), 'end', or 'test'
+  const file = typeof key === 'number' ? `alert-${key}.mp3` : `alert-${key}.mp3`
+  const audio = new Audio(`${AUDIO_BASE}${file}`)
+  audio.play().catch(() => {})
 }
 
 export default function App() {
@@ -237,7 +216,7 @@ export default function App() {
     setLocalAlertVoice(enabled)
     localStorage.setItem('localAlertVoice', String(enabled))
     // Speak test phrase immediately from user gesture to unlock TTS
-    if (enabled) speakHebrew('חיווי קולי הופעל')
+    if (enabled) playAlertAudio('test')
   }, [])
 
   // Load all zone names AND full GeoJSON from geojson file
@@ -304,7 +283,7 @@ export default function App() {
         const text = `${alert.title || 'התרעה'} באזורך`
         const color = catColors[alert.cat] || '#ef4444'
         setLocalBanner({ text, color })
-        if (localAlertVoice) speakHebrew(text)
+        if (localAlertVoice) playAlertAudio(alert.cat)
         setTimeout(() => setLocalBanner(b => b?.text === text ? null : b), 5000)
       }
     }
@@ -315,7 +294,7 @@ export default function App() {
         const text = 'האירוע באזורך הסתיים'
         const color = '#22c55e'
         setLocalBanner({ text, color })
-        if (localAlertVoice) speakHebrew(text)
+        if (localAlertVoice) playAlertAudio('end')
         setTimeout(() => setLocalBanner(b => b?.text === text ? null : b), 5000)
       }
     }
