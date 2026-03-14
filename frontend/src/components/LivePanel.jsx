@@ -1,11 +1,22 @@
 import { Activity, MapPin } from 'lucide-react'
 import { formatTime } from '../utils/dateFormat'
 
-export default function LivePanel({ currentAlerts, lastRefresh, loading, onAreaClick, catColors = {} }) {
+export default function LivePanel({ currentAlerts, lastRefresh, loading, onAreaClick, catColors = {}, demoMode = false }) {
   const isQuiet = currentAlerts.length === 0
 
   return (
     <div className="p-4 space-y-4">
+
+      {/* Demo mode indicator */}
+      {demoMode && (
+        <div className="rounded-xl p-3 flex items-center gap-2 border bg-amber-900/30 border-amber-700/60">
+          <span className="text-lg">🎬</span>
+          <div>
+            <div className="text-sm font-bold text-amber-300">מצב דמו</div>
+            <div className="text-xs text-amber-400/70">ההתרעות המוצגות הן לדוגמה בלבד</div>
+          </div>
+        </div>
+      )}
 
       {/* Status */}
       <div className={`rounded-xl p-4 flex items-center gap-3 border ${

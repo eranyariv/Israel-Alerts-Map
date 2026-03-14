@@ -152,13 +152,25 @@ function findUserZone(lat, lng, zonesGeoJson) {
 
 function speakHebrew(text) {
   if (!window.speechSynthesis) return
-  const utterance = new SpeechSynthesisUtterance(text)
-  utterance.lang = 'he-IL'
-  const voices = speechSynthesis.getVoices()
-  const hebrewVoice = voices.find(v => v.lang.startsWith('he') && v.name.toLowerCase().includes('female'))
-    || voices.find(v => v.lang.startsWith('he'))
-  if (hebrewVoice) utterance.voice = hebrewVoice
-  speechSynthesis.speak(utterance)
+  const doSpeak = () => {
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.lang = 'he-IL'
+    utterance.rate = 1.0
+    utterance.volume = 1.0
+    const voices = speechSynthesis.getVoices()
+    const hebrewVoice = voices.find(v => v.lang.startsWith('he') && v.name.toLowerCase().includes('female'))
+      || voices.find(v => v.lang.startsWith('he'))
+      || voices.find(v => v.lang === 'he-IL')
+    if (hebrewVoice) utterance.voice = hebrewVoice
+    speechSynthesis.cancel() // stop any current speech
+    speechSynthesis.speak(utterance)
+  }
+  // getVoices() may return [] until voiceschanged fires
+  if (speechSynthesis.getVoices().length > 0) {
+    doSpeak()
+  } else {
+    speechSynthesis.addEventListener('voiceschanged', doSpeak, { once: true })
+  }
 }
 
 export default function App() {
@@ -494,7 +506,7 @@ export default function App() {
 
   const renderSidebarContent = () => {
     if (mode === 'live') {
-      return <LivePanel currentAlerts={visibleAlerts} lastRefresh={lastRefresh} loading={loading} onAreaClick={setFlyToArea} catColors={catColors} />
+      return <LivePanel currentAlerts={visibleAlerts} lastRefresh={lastRefresh} loading={loading} onAreaClick={setFlyToArea} catColors={catColors} demoMode={demoMode} />
     }
     switch (sidebarTab) {
       case 'stats':   return <StatsPanel heatmapData={filteredHeatmap} loading={loading} filters={filters} onAreaClick={setFlyToArea} historyView={historyView} onHistoryViewChange={setHistoryView} realizationData={realizationData} computeRealization={computeRealization} realizationProgress={realizationProgress} catColors={catColors} />
@@ -522,14 +534,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Local alert banner */}
-      {localBanner && (
-        <div className="fixed top-0 left-0 right-0 z-[60]" style={{ backgroundColor: localBanner.color, transition: 'opacity 0.3s ease-in' }}>
-          <div className="flex items-center justify-center px-4 py-3 text-white font-bold text-lg" dir="rtl">
-            {localBanner.text}
-          </div>
-        </div>
-      )}
+      {/* Local alert banner — removed from here, rendered inside <main> instead */}
 
       {/* -- Desktop Sidebar ------------------------------------------------- */}
       <aside className="hidden md:flex w-80 flex-col bg-slate-800 border-l border-slate-700 z-10 shrink-0" style={{height:'100dvh',overflow:'hidden'}}>
@@ -624,6 +629,31 @@ export default function App() {
       {/* -- Map ------------------------------------------------------------- */}
       <main className="flex-1 relative" style={{ marginTop: visibleAlerts.length > 0 ? 64 : 0 }}>
         <Map heatmapData={heatmapData} currentAlerts={currentAlerts} flyToArea={flyToArea} mode={mode} mapType={mapType} historyView={historyView} realizationData={realizationData} catColors={catColors} />
+
+        {/* Local alert banner — flashing, map area only */}
+        {localBanner && (
+          <div
+            className="absolute top-0 left-0 right-0 z-30"
+            style={{
+              backgroundColor: localBanner.color,
+              animation: 'local-banner-flash 0.6s ease-in-out infinite alternate',
+            }}
+          >
+            <style>{`@keyframes local-banner-flash { from { opacity: 1; } to { opacity: 0.3; } }`}</style>
+            <div className="flex items-center justify-center px-4 py-3 text-white font-bold text-lg" dir="rtl">
+              {localBanner.text}
+            </div>
+          </div>
+        )}
+
+        {/* Demo mode badge on map */}
+        {demoMode && (
+          <div className="absolute top-3 left-3 z-20 hidden md:block">
+            <div className="bg-amber-600/90 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg border border-amber-500">
+              🎬 מצב דמו
+            </div>
+          </div>
+        )}
 
         {/* Mobile top bar */}
         <div className="md:hidden absolute top-3 right-3 left-3 z-20 flex flex-col gap-2">
@@ -763,7 +793,7 @@ export default function App() {
         }
       >
         {bottomSheetTab === 'live'
-          ? <LivePanel currentAlerts={visibleAlerts} lastRefresh={lastRefresh} loading={loading} onAreaClick={setFlyToArea} catColors={catColors} />
+          ? <LivePanel currentAlerts={visibleAlerts} lastRefresh={lastRefresh} loading={loading} onAreaClick={setFlyToArea} catColors={catColors} demoMode={demoMode} />
           : bottomSheetTab === 'stats'
             ? <StatsPanel heatmapData={filteredHeatmap} loading={loading} filters={filters} onAreaClick={setFlyToArea} historyView={historyView} onHistoryViewChange={setHistoryView} realizationData={realizationData} computeRealization={computeRealization} realizationProgress={realizationProgress} catColors={catColors} />
             : bottomSheetTab === 'events'
