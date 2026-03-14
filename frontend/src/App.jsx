@@ -199,7 +199,7 @@ function playAlertAudio(key, title) {
   audio.play().catch(() => {})
 
   // Also send OS notification via service worker (works in background)
-  if (_swRegistration && Notification.permission === 'granted' && title) {
+  if (_swRegistration && typeof Notification !== 'undefined' && Notification.permission === 'granted' && title) {
     _swRegistration.active?.postMessage({
       type: 'ALERT_NOTIFICATION',
       title,
