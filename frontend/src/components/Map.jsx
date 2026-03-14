@@ -408,7 +408,7 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
 
         const histogramHtml = hasHistogram ? `
           <div style="margin-bottom:10px">
-            <div style="font-size:10px;color:#64748b;margin-bottom:4px">התפלגות לפי שעות (ללא התרעות מקדימות)</div>
+            <div style="font-size:10px;color:#64748b;margin-bottom:4px;text-align:right">התפלגות לפי שעות (ללא התרעות מקדימות)</div>
             <div style="display:flex;align-items:flex-end;gap:1px;height:40px;direction:ltr">
               ${hourBins.map((v, h) => {
                 const pct = v > 0 ? Math.max(8, Math.round((v / maxBin) * 100)) : 0
@@ -437,7 +437,7 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
           }
           const pct = Math.round((realized / newsAlerts.length) * 100)
           const hue = Math.round(120 * (1 - realized / newsAlerts.length))
-          realizationHtml = `<div style="font-size:11px;color:#94a3b8;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #334155">
+          realizationHtml = `<div style="font-size:11px;color:#94a3b8;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #334155;text-align:right;direction:rtl">
             מימוש התרעות מקדימות: <span style="color:hsl(${hue},85%,55%);font-weight:600">${pct}%</span>
             <span style="color:#64748b;font-size:10px">(${realized} מתוך ${newsAlerts.length})</span>
           </div>`
@@ -447,12 +447,12 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
           const dt    = fmtDate(a.savedAt) || ''
           const label = CAT_LABELS[a.cat] || a.title || 'התרעה'
           const color = CAT_COLORS[a.cat] || '#94a3b8'
-          return `<div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid #1e293b">
+          return `<div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid #1e293b;direction:rtl">
+            <span style="color:${color};font-size:12px;flex:1;text-align:right">${label}</span>
             <span style="color:#64748b;font-size:11px;font-family:monospace;white-space:nowrap;direction:ltr">${dt}</span>
-            <span style="color:${color};font-size:12px;flex:1">${label}</span>
           </div>`
         }).join('')
-        return `<div dir="rtl" style="font-family:Assistant,sans-serif;width:290px">
+        return `<div dir="rtl" style="font-family:Assistant,sans-serif;width:290px;text-align:right;direction:rtl">
           <div style="font-weight:700;font-size:15px;color:#f1f5f9;margin-bottom:2px">${name}</div>
           <div style="font-size:12px;color:#64748b;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid #334155">${alerts.length} התרעות</div>
           ${histogramHtml}
