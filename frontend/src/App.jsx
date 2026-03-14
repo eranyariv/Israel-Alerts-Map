@@ -644,7 +644,7 @@ export default function App() {
       </aside>
 
       {/* -- Map ------------------------------------------------------------- */}
-      <main className="flex-1 relative" style={{ marginTop: visibleAlerts.length > 0 ? 64 : 0 }}>
+      <main className="flex-1 relative">
         <Map heatmapData={heatmapData} currentAlerts={currentAlerts} flyToArea={flyToArea} mode={mode} mapType={mapType} historyView={historyView} realizationData={realizationData} catColors={catColors} />
 
         {/* Local alert banner — flashing, floating above all map controls */}
