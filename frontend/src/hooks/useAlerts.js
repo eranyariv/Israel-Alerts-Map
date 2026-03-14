@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import * as log from '../utils/logger'
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -166,6 +166,8 @@ export function buildHeatmap(history) {
 // ── Hook ───────────────────────────────────────────────────────────────────
 
 export function useAlerts({ source = 'oref', demoMode = false, demoZone = null } = {}) {
+  const demoZoneRef = useRef(demoZone)
+  demoZoneRef.current = demoZone
   const [currentAlerts, setCurrentAlerts] = useState([])
   const [heatmapData,   setHeatmapData]   = useState({ cities: [], max_count: 0, total: 0, by_cat: {} })
   const [rawEvents,     setRawEvents]     = useState([])
@@ -204,12 +206,13 @@ export function useAlerts({ source = 'oref', demoMode = false, demoZone = null }
               // Show next alert type, localized to user's zone if available
               const cat = typeOrder[idx % typeOrder.length]
               const baseAlert = demoAlerts.find(a => a.cat === cat) || demoAlerts[idx % demoAlerts.length]
-              const alert = demoZone
-                ? { ...baseAlert, cities: [demoZone] }
+              const zone = demoZoneRef.current
+              const alert = zone
+                ? { ...baseAlert, cities: [zone] }
                 : baseAlert
               setCurrentAlerts([alert])
               setLastRefresh(new Date())
-              log.info(`[demo] showing alert cat=${cat}: ${alert.title}${demoZone ? ` (zone: ${demoZone})` : ''}`)
+              log.info(`[demo] showing alert cat=${cat}: ${alert.title}${zone ? ` (zone: ${zone})` : ''}`)
               showingAlert = true
             } else {
               // EndAlert — clear
@@ -261,7 +264,7 @@ export function useAlerts({ source = 'oref', demoMode = false, demoZone = null }
 
     poll()
     return () => { active = false; clearTimeout(timer) }
-  }, [demoMode, demoZone])
+  }, [demoMode])
 
   // ── Relay health: poll /health every 15 s ─────────────────────────────────
 
