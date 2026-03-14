@@ -1,5 +1,5 @@
-import { useEffect } from 'react'
-import { X, Mail, ChevronLeft, Download } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { X, Mail, ChevronLeft, ChevronDown, ChevronUp, Download } from 'lucide-react'
 import { MAP_TILES } from '../utils/mapTiles'
 import { CATEGORY_LABELS } from '../utils/heatmap'
 import { VERSION } from '../version'
@@ -7,11 +7,22 @@ import { VERSION } from '../version'
 const SITE_URL = 'https://yariv.org/map/'
 
 
-function Section({ title, children }) {
+function Section({ title, children, collapsible = false, defaultOpen = true }) {
+  const [open, setOpen] = useState(defaultOpen)
   return (
     <div className="space-y-2">
-      <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide">{title}</div>
-      {children}
+      {collapsible ? (
+        <button
+          onClick={() => setOpen(o => !o)}
+          className="flex items-center justify-between w-full text-xs font-semibold text-slate-400 uppercase tracking-wide hover:text-slate-300 transition-colors"
+        >
+          <span>{title}</span>
+          {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
+      ) : (
+        <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide">{title}</div>
+      )}
+      {(!collapsible || open) && children}
     </div>
   )
 }
@@ -91,7 +102,7 @@ export default function SettingsPanel({
             >
               <div className="text-right">
                 <div>התרעות באזורי</div>
-                <div className="text-xs text-slate-500 mt-0.5">קבלת התראה כשיש אירוע באזור שלי</div>
+                <div className="text-xs text-slate-500 mt-0.5">קבלת התרעה כשיש אירוע באזור שלי</div>
               </div>
               <div dir="ltr" className={`w-9 h-5 rounded-full border transition-colors shrink-0 mr-2 flex items-center px-0.5
                 ${localAlertEnabled ? 'bg-red-500 border-red-400' : 'bg-slate-600 border-slate-500'}`}>
@@ -123,7 +134,7 @@ export default function SettingsPanel({
           </Section>
 
           {/* Alert colors */}
-          <Section title="צבעי התרעות">
+          <Section title="צבעי התרעות" collapsible defaultOpen={false}>
             <div className="space-y-1.5">
               {[1, 2, 3, 4, 5, 6, 7, 8].map(cat => (
                 <div key={cat} className="flex items-center gap-3 px-3 py-2 rounded-xl bg-slate-700/30">
@@ -151,7 +162,7 @@ export default function SettingsPanel({
           </Section>
 
           {/* Map type */}
-          <Section title="סוג מפה">
+          <Section title="סוג מפה" collapsible defaultOpen={false}>
             {Object.entries(MAP_TILES).map(([id, tile]) => (
               <OptionRow key={id} label={tile.label} selected={mapType === id} onClick={() => onMapTypeChange(id)} />
             ))}

@@ -197,7 +197,12 @@ export default function App() {
   const [localBanner, setLocalBanner] = useState(null) // { text, color } or null
   const prevAlertsRef = useRef([])
 
-  const { currentAlerts, heatmapData, rawEvents, loading, error, lastRefresh, refresh, wsConnected, relayHealth } = useAlerts({ source: 'redalert', demoMode })
+  const demoZone = useMemo(() => {
+    if (!demoMode || !userLocation || !zonesGeoJson) return null
+    return findUserZone(userLocation.lat, userLocation.lng, zonesGeoJson)
+  }, [demoMode, userLocation, zonesGeoJson])
+
+  const { currentAlerts, heatmapData, rawEvents, loading, error, lastRefresh, refresh, wsConnected, relayHealth } = useAlerts({ source: 'redalert', demoMode, demoZone })
 
   const catColors = useMemo(() => ({ ...CATEGORY_COLORS, ...customCatColors }), [customCatColors])
   const handleCatColorChange = useCallback((cat, color) => { setCustomCatColors(prev => { const next = { ...prev, [cat]: color }; localStorage.setItem('customCatColors', JSON.stringify(next)); return next }) }, [])
@@ -246,9 +251,9 @@ export default function App() {
     }
   }
 
-  // Geolocation polling for local alerts
+  // Geolocation polling for local alerts and demo mode
   useEffect(() => {
-    if (!localAlertEnabled || !navigator.geolocation) return
+    if ((!localAlertEnabled && !demoMode) || !navigator.geolocation) return
     let active = true
     const update = () => {
       navigator.geolocation.getCurrentPosition(
@@ -260,7 +265,7 @@ export default function App() {
     update()
     const timer = setInterval(update, 60_000)
     return () => { active = false; clearInterval(timer) }
-  }, [localAlertEnabled])
+  }, [localAlertEnabled, demoMode])
 
   // Alert change detection for local alerts
   useEffect(() => {
