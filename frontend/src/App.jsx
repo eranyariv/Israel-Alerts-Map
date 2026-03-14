@@ -152,11 +152,39 @@ function findUserZone(lat, lng, zonesGeoJson) {
 
 // Pre-recorded audio alerts: alert-1.mp3 .. alert-8.mp3, alert-end.mp3, alert-test.mp3
 const AUDIO_BASE = `${import.meta.env.BASE_URL}audio/`
-function playAlertAudio(key) {
+let _swRegistration = null
+
+// Register service worker for background notifications
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw-alerts.js`)
+    .then(reg => { _swRegistration = reg })
+    .catch(() => {})
+}
+
+function playAlertAudio(key, title) {
   // key: 1-8 (cat number), 'end', or 'test'
-  const file = typeof key === 'number' ? `alert-${key}.mp3` : `alert-${key}.mp3`
-  const audio = new Audio(`${AUDIO_BASE}${file}`)
+  const file = `alert-${key}.mp3`
+  const audioUrl = `${AUDIO_BASE}${file}`
+
+  // Always try direct playback first
+  const audio = new Audio(audioUrl)
   audio.play().catch(() => {})
+
+  // Also send OS notification via service worker (works in background)
+  if (_swRegistration && Notification.permission === 'granted' && title) {
+    _swRegistration.active?.postMessage({
+      type: 'ALERT_NOTIFICATION',
+      title,
+      audioUrl,
+    })
+  }
+}
+
+// Request notification permission when local alerts are enabled
+function requestNotificationPermission() {
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission()
+  }
 }
 
 export default function App() {
@@ -210,6 +238,7 @@ export default function App() {
     setLocalAlertEnabled(enabled)
     localStorage.setItem('localAlertEnabled', String(enabled))
     if (!enabled) setUserLocation(null)
+    if (enabled) requestNotificationPermission()
   }, [])
 
   const handleLocalAlertVoiceToggle = useCallback((enabled) => {
@@ -283,7 +312,7 @@ export default function App() {
         const text = `${alert.title || 'התרעה'} באזורך`
         const color = catColors[alert.cat] || '#ef4444'
         setLocalBanner({ text, color })
-        if (localAlertVoice) playAlertAudio(alert.cat)
+        if (localAlertVoice) playAlertAudio(alert.cat, text)
         setTimeout(() => setLocalBanner(b => b?.text === text ? null : b), 5000)
       }
     }
@@ -294,7 +323,7 @@ export default function App() {
         const text = 'האירוע באזורך הסתיים'
         const color = '#22c55e'
         setLocalBanner({ text, color })
-        if (localAlertVoice) playAlertAudio('end')
+        if (localAlertVoice) playAlertAudio('end', text)
         setTimeout(() => setLocalBanner(b => b?.text === text ? null : b), 5000)
       }
     }
@@ -618,17 +647,20 @@ export default function App() {
       <main className="flex-1 relative" style={{ marginTop: visibleAlerts.length > 0 ? 64 : 0 }}>
         <Map heatmapData={heatmapData} currentAlerts={currentAlerts} flyToArea={flyToArea} mode={mode} mapType={mapType} historyView={historyView} realizationData={realizationData} catColors={catColors} />
 
-        {/* Local alert banner — flashing, map area only */}
+        {/* Local alert banner — flashing, floating above all map controls */}
         {localBanner && (
           <div
-            className="absolute top-0 left-0 right-0 z-30"
+            className="absolute top-0 left-0 right-0 z-[100] pointer-events-none"
             style={{
-              backgroundColor: localBanner.color,
-              animation: 'local-banner-flash 0.6s ease-in-out infinite alternate',
+              animation: 'local-banner-flash 0.5s ease-in-out infinite alternate',
             }}
           >
-            <style>{`@keyframes local-banner-flash { from { opacity: 1; } to { opacity: 0.3; } }`}</style>
-            <div className="flex items-center justify-center px-4 py-3 text-white font-bold text-lg" dir="rtl">
+            <style>{`@keyframes local-banner-flash { from { opacity: 1; } to { opacity: 0.15; } }`}</style>
+            <div
+              className="pointer-events-auto flex items-center justify-center px-4 py-4 text-white font-bold text-xl shadow-2xl"
+              dir="rtl"
+              style={{ backgroundColor: localBanner.color }}
+            >
               {localBanner.text}
             </div>
           </div>
@@ -645,6 +677,13 @@ export default function App() {
 
         {/* Mobile top bar */}
         <div className="md:hidden absolute top-3 right-3 left-3 z-20 flex flex-col gap-2">
+          {demoMode && (
+            <div className="flex justify-center">
+              <div className="bg-amber-600/90 text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg border border-amber-500">
+                🎬 מצב דמו — ההתרעות לדוגמה בלבד
+              </div>
+            </div>
+          )}
           <div className="flex items-center gap-2">
             <div className="flex-1 flex items-center gap-2 bg-slate-800/90 backdrop-blur-sm
                             px-3 py-2 rounded-full border border-slate-700 shadow-lg min-w-0">
