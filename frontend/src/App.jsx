@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { RefreshCw, SlidersHorizontal, BarChart2, Shield, Settings, ScrollText } from 'lucide-react'
 import { formatTime } from './utils/dateFormat'
 import { ALL_CATEGORIES, CATEGORY_COLORS } from './utils/heatmap'
@@ -215,7 +215,27 @@ function requestNotificationPermission() {
   }
 }
 
-export default function App() {
+// Error boundary to prevent full blank screen on crash
+class AppErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null } }
+  static getDerivedStateFromError(error) { return { error } }
+  render() {
+    if (this.state.error) return (
+      <div dir="rtl" style={{ background: '#0f172a', color: '#e2e8f0', minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, fontFamily: 'system-ui' }}>
+        <h1 style={{ fontSize: 24, marginBottom: 12 }}>שגיאה</h1>
+        <p style={{ color: '#94a3b8', marginBottom: 16 }}>אירעה שגיאה בטעינת האפליקציה</p>
+        <pre style={{ color: '#ef4444', fontSize: 12, maxWidth: '90vw', overflow: 'auto', marginBottom: 16 }}>{this.state.error?.message}</pre>
+        <button onClick={() => { this.setState({ error: null }); window.location.reload() }}
+          style={{ background: '#2563eb', color: 'white', border: 'none', padding: '8px 24px', borderRadius: 8, cursor: 'pointer', fontSize: 14 }}>
+          רענן
+        </button>
+      </div>
+    )
+    return this.props.children
+  }
+}
+
+function AppInner() {
   const [mode,            setMode]            = useState(() => localStorage.getItem('viewMode') || 'live')
   const [filters,         setFilters]         = useState(() => {
     try {
@@ -858,4 +878,8 @@ export default function App() {
       </BottomSheet>
     </div>
   )
+}
+
+export default function App() {
+  return <AppErrorBoundary><AppInner /></AppErrorBoundary>
 }

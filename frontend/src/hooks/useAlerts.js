@@ -196,31 +196,39 @@ export function useAlerts({ source = 'oref', demoMode = false, demoZone = null }
           demoAlerts = (Array.isArray(data) ? data : []).map(parseAlertItem).filter(Boolean)
           log.success(`[demo] received ${demoAlerts.length} alert types for cycling`)
 
-          const typeOrder = [1, 6, 4, 2, 3, 5, 7, 8] // missiles, radiological, earthquake, aircraft, infiltration, newsFlash, tsunami, hazmat
+          if (!demoAlerts.length) {
+            log.warn('[demo] no valid demo alerts received, cannot cycle')
+            return
+          }
+
+          const typeOrder = [1, 6, 4, 2, 3, 5, 7, 8]
           let idx = 0
           let showingAlert = false
 
           function tick() {
             if (!active) return
-            if (!showingAlert) {
-              // Show next alert type, localized to user's zone if available
-              const cat = typeOrder[idx % typeOrder.length]
-              const baseAlert = demoAlerts.find(a => a.cat === cat) || demoAlerts[idx % demoAlerts.length]
-              const zone = demoZoneRef.current
-              const alert = zone
-                ? { ...baseAlert, cities: [zone] }
-                : baseAlert
-              setCurrentAlerts([alert])
-              setLastRefresh(new Date())
-              log.info(`[demo] showing alert cat=${cat}: ${alert.title}${zone ? ` (zone: ${zone})` : ''}`)
-              showingAlert = true
-            } else {
-              // EndAlert — clear
-              setCurrentAlerts([])
-              setLastRefresh(new Date())
-              log.info(`[demo] endAlert`)
-              showingAlert = false
-              idx++
+            try {
+              if (!showingAlert) {
+                const cat = typeOrder[idx % typeOrder.length]
+                const baseAlert = demoAlerts.find(a => a.cat === cat) || demoAlerts[0]
+                if (!baseAlert) { timer = setTimeout(tick, 15_000); return }
+                const zone = demoZoneRef.current
+                const alert = zone
+                  ? { ...baseAlert, cities: [zone] }
+                  : baseAlert
+                setCurrentAlerts([alert])
+                setLastRefresh(new Date())
+                log.info(`[demo] showing alert cat=${cat}: ${alert.title}${zone ? ` (zone: ${zone})` : ''}`)
+                showingAlert = true
+              } else {
+                setCurrentAlerts([])
+                setLastRefresh(new Date())
+                log.info(`[demo] endAlert`)
+                showingAlert = false
+                idx++
+              }
+            } catch (e) {
+              log.error('[demo] tick error:', e.message)
             }
             timer = setTimeout(tick, 15_000)
           }
