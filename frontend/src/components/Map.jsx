@@ -421,6 +421,28 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
             </div>
           </div>` : ''
 
+        // Early alert realization for this area
+        const newsAlerts = alerts.filter(a => a.cat === 5)
+        const realAlerts = alerts.filter(a => a.cat !== 5)
+        let realizationHtml = ''
+        if (newsAlerts.length > 0) {
+          const WINDOW_MS = 12 * 60 * 1000
+          let realized = 0
+          for (const nf of newsAlerts) {
+            const nfTime = new Date(nf.savedAt).getTime()
+            if (realAlerts.some(ra => {
+              const diff = new Date(ra.savedAt).getTime() - nfTime
+              return diff >= 0 && diff <= WINDOW_MS
+            })) realized++
+          }
+          const pct = Math.round((realized / newsAlerts.length) * 100)
+          const hue = Math.round(120 * (1 - realized / newsAlerts.length))
+          realizationHtml = `<div style="font-size:11px;color:#94a3b8;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #334155">
+            מימוש התרעות מקדימות: <span style="color:hsl(${hue},85%,55%);font-weight:600">${pct}%</span>
+            <span style="color:#64748b;font-size:10px">(${realized} מתוך ${newsAlerts.length})</span>
+          </div>`
+        }
+
         const rows = alerts.map(a => {
           const dt    = fmtDate(a.savedAt) || ''
           const label = CAT_LABELS[a.cat] || a.title || 'התרעה'
@@ -434,6 +456,7 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
           <div style="font-weight:700;font-size:15px;color:#f1f5f9;margin-bottom:2px">${name}</div>
           <div style="font-size:12px;color:#64748b;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid #334155">${alerts.length} התרעות</div>
           ${histogramHtml}
+          ${realizationHtml}
           <div style="max-height:250px;overflow-y:auto">${rows}</div>
         </div>`
       }, { maxWidth: 340 })
