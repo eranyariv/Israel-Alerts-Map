@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { RefreshCw, SlidersHorizontal, BarChart2, Shield, Settings, ScrollText } from 'lucide-react'
 import { formatTime } from './utils/dateFormat'
-import { ALL_CATEGORIES } from './utils/heatmap'
+import { ALL_CATEGORIES, CATEGORY_COLORS } from './utils/heatmap'
 
 import Map from './components/Map'
 import FilterPanel from './components/FilterPanel'
@@ -145,6 +145,7 @@ export default function App() {
   const [settingsOpen,    setSettingsOpen]    = useState(false)
   const [mapType,         setMapType]         = useState(() => localStorage.getItem('mapType') || DEFAULT_MAP_TYPE)
   const [demoMode,        setDemoMode]        = useState(false)
+  const [customCatColors, setCustomCatColors] = useState(() => { try { return JSON.parse(localStorage.getItem('customCatColors') || '{}') } catch { return {} } })
   const [allAreas,        setAllAreas]        = useState([])
   const [historyView,     setHistoryView]     = useState('heatmap') // 'heatmap' | 'realization'
   const [zonesGeoJson,    setZonesGeoJson]    = useState(null)
@@ -153,6 +154,10 @@ export default function App() {
   const debugTapRef = useRef({ count: 0, timer: null })
 
   const { currentAlerts, heatmapData, rawEvents, loading, error, lastRefresh, refresh, wsConnected, relayHealth } = useAlerts({ source: 'redalert', demoMode })
+
+  const catColors = useMemo(() => ({ ...CATEGORY_COLORS, ...customCatColors }), [customCatColors])
+  const handleCatColorChange = useCallback((cat, color) => { setCustomCatColors(prev => { const next = { ...prev, [cat]: color }; localStorage.setItem('customCatColors', JSON.stringify(next)); return next }) }, [])
+  const handleCatColorsReset = useCallback(() => { setCustomCatColors({}); localStorage.removeItem('customCatColors') }, [])
 
   // Load all zone names AND full GeoJSON from geojson file
   useEffect(() => {
@@ -378,12 +383,12 @@ export default function App() {
 
   const renderSidebarContent = () => {
     if (mode === 'live') {
-      return <LivePanel currentAlerts={visibleAlerts} lastRefresh={lastRefresh} loading={loading} onAreaClick={setFlyToArea} />
+      return <LivePanel currentAlerts={visibleAlerts} lastRefresh={lastRefresh} loading={loading} onAreaClick={setFlyToArea} catColors={catColors} />
     }
     switch (sidebarTab) {
-      case 'stats':   return <StatsPanel heatmapData={filteredHeatmap} loading={loading} filters={filters} onAreaClick={setFlyToArea} historyView={historyView} onHistoryViewChange={setHistoryView} realizationData={realizationData} computeRealization={computeRealization} realizationProgress={realizationProgress} />
-      case 'events':  return <EventsLog events={filteredEvents} loading={loading} onAreaClick={setFlyToArea} filterAreas={filters.areas} />
-      case 'filters': return <FilterPanel {...filters} allAreas={allAreas} onChange={handleFilterChange} />
+      case 'stats':   return <StatsPanel heatmapData={filteredHeatmap} loading={loading} filters={filters} onAreaClick={setFlyToArea} historyView={historyView} onHistoryViewChange={setHistoryView} realizationData={realizationData} computeRealization={computeRealization} realizationProgress={realizationProgress} catColors={catColors} />
+      case 'events':  return <EventsLog events={filteredEvents} loading={loading} onAreaClick={setFlyToArea} filterAreas={filters.areas} catColors={catColors} />
+      case 'filters': return <FilterPanel {...filters} allAreas={allAreas} onChange={handleFilterChange} catColors={catColors} />
       default:        return null
     }
   }
@@ -498,7 +503,7 @@ export default function App() {
 
       {/* -- Map ------------------------------------------------------------- */}
       <main className="flex-1 relative" style={{ marginTop: visibleAlerts.length > 0 ? 64 : 0 }}>
-        <Map heatmapData={heatmapData} currentAlerts={currentAlerts} flyToArea={flyToArea} mode={mode} mapType={mapType} historyView={historyView} realizationData={realizationData} />
+        <Map heatmapData={heatmapData} currentAlerts={currentAlerts} flyToArea={flyToArea} mode={mode} mapType={mapType} historyView={historyView} realizationData={realizationData} catColors={catColors} />
 
         {/* Mobile top bar */}
         <div className="md:hidden absolute top-3 right-3 left-3 z-20 flex flex-col gap-2">
@@ -616,6 +621,10 @@ export default function App() {
         demoMode={demoMode}
         onDemoModeChange={setDemoMode}
         onExportKml={handleExportKml}
+        catColors={catColors}
+        customCatColors={customCatColors}
+        onCatColorChange={handleCatColorChange}
+        onCatColorsReset={handleCatColorsReset}
       />
 
       {/* Mobile Bottom Sheet */}
@@ -630,12 +639,12 @@ export default function App() {
         }
       >
         {bottomSheetTab === 'live'
-          ? <LivePanel currentAlerts={visibleAlerts} lastRefresh={lastRefresh} loading={loading} onAreaClick={setFlyToArea} />
+          ? <LivePanel currentAlerts={visibleAlerts} lastRefresh={lastRefresh} loading={loading} onAreaClick={setFlyToArea} catColors={catColors} />
           : bottomSheetTab === 'stats'
-            ? <StatsPanel heatmapData={filteredHeatmap} loading={loading} filters={filters} onAreaClick={setFlyToArea} historyView={historyView} onHistoryViewChange={setHistoryView} realizationData={realizationData} computeRealization={computeRealization} realizationProgress={realizationProgress} />
+            ? <StatsPanel heatmapData={filteredHeatmap} loading={loading} filters={filters} onAreaClick={setFlyToArea} historyView={historyView} onHistoryViewChange={setHistoryView} realizationData={realizationData} computeRealization={computeRealization} realizationProgress={realizationProgress} catColors={catColors} />
             : bottomSheetTab === 'events'
-              ? <EventsLog events={filteredEvents} loading={loading} onAreaClick={setFlyToArea} filterAreas={filters.areas} />
-              : <FilterPanel {...filters} allAreas={allAreas} onChange={handleFilterChange} />
+              ? <EventsLog events={filteredEvents} loading={loading} onAreaClick={setFlyToArea} filterAreas={filters.areas} catColors={catColors} />
+              : <FilterPanel {...filters} allAreas={allAreas} onChange={handleFilterChange} catColors={catColors} />
         }
       </BottomSheet>
     </div>

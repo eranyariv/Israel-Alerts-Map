@@ -222,7 +222,7 @@ function LiveFlyTo({ currentAlerts }) {
   return null
 }
 
-export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapType = DEFAULT_MAP_TYPE, historyView = 'heatmap', realizationData = {} }) {
+export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapType = DEFAULT_MAP_TYPE, historyView = 'heatmap', realizationData = {}, catColors = {} }) {
   const [zones, setZones] = useState(null)
   const [rulerActive, setRulerActive] = useState(false)
 
@@ -259,16 +259,7 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
     7: 'צונאמי',
     8: 'אירוע חומרים מסוכנים',
   }
-  const CAT_COLORS = {
-    1: '#dc2626',  // red       — missiles/rockets
-    2: '#d946ef',  // magenta   — hostile aircraft
-    3: '#7f1d1d',  // dark red  — terrorist infiltration
-    4: '#06b6d4',  // cyan      — earthquake
-    5: '#f97316',  // orange    — news flash
-    6: '#facc15',  // yellow    — radiological
-    7: '#3b82f6',  // blue      — tsunami
-    8: '#84cc16',  // lime      — hazardous materials
-  }
+  const CAT_COLORS = catColors
 
   // Live mode: set of currently-alerted zone names
   const liveZones    = new Set(currentAlerts.flatMap(a => a.cities ?? []))

@@ -1,18 +1,7 @@
 import { Activity, MapPin } from 'lucide-react'
 import { formatTime } from '../utils/dateFormat'
 
-const CAT_COLORS = {
-  1: '#dc2626',  // red       — missiles/rockets
-  2: '#d946ef',  // magenta   — hostile aircraft
-  3: '#7f1d1d',  // dark red  — terrorist infiltration
-  4: '#06b6d4',  // cyan      — earthquake
-  5: '#f97316',  // orange    — news flash
-  6: '#facc15',  // yellow    — radiological
-  7: '#3b82f6',  // blue      — tsunami
-  8: '#84cc16',  // lime      — hazardous materials
-}
-
-export default function LivePanel({ currentAlerts, lastRefresh, loading, onAreaClick }) {
+export default function LivePanel({ currentAlerts, lastRefresh, loading, onAreaClick, catColors = {} }) {
   const isQuiet = currentAlerts.length === 0
 
   return (
@@ -43,7 +32,7 @@ export default function LivePanel({ currentAlerts, lastRefresh, loading, onAreaC
 
       {/* Active alert details */}
       {currentAlerts.map(alert => {
-        const color = CAT_COLORS[alert.cat] ?? '#ef4444'
+        const color = catColors[alert.cat] ?? '#ef4444'
         return (
         <div key={alert.id} className="rounded-xl p-3 space-y-2"
           style={{ background: `${color}18`, border: `1px solid ${color}55` }}>

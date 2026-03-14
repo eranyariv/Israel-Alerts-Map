@@ -33,7 +33,7 @@ function CityChip({ city, onAreaClick, highlight }) {
   )
 }
 
-function EventRow({ event, onAreaClick, filterAreas }) {
+function EventRow({ event, onAreaClick, filterAreas, catColors = {} }) {
   const [expanded, setExpanded] = useState(false)
   const active = !event.endedAt
   const duration = fmtDuration(event.savedAt, event.endedAt)
@@ -51,7 +51,7 @@ function EventRow({ event, onAreaClick, filterAreas }) {
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <div
             className="w-2.5 h-2.5 rounded-full shrink-0"
-            style={{ backgroundColor: CATEGORY_COLORS[event.cat] || '#94a3b8' }}
+            style={{ backgroundColor: catColors[event.cat] || CATEGORY_COLORS[event.cat] || '#94a3b8' }}
           />
           <span className="text-sm font-semibold text-white truncate">
             {CATEGORY_LABELS[event.cat] || event.title}
@@ -136,7 +136,7 @@ function EventRow({ event, onAreaClick, filterAreas }) {
   )
 }
 
-export default function EventsLog({ events, loading, onAreaClick, filterAreas }) {
+export default function EventsLog({ events, loading, onAreaClick, filterAreas, catColors = {} }) {
   if (loading) {
     return (
       <div className="p-4 space-y-2">
@@ -177,7 +177,7 @@ export default function EventsLog({ events, loading, onAreaClick, filterAreas })
       </div>
       <div className="space-y-2">
         {sorted.map((event, i) => (
-          <EventRow key={`${event.id}-${i}`} event={event} onAreaClick={onAreaClick} filterAreas={filterAreas} />
+          <EventRow key={`${event.id}-${i}`} event={event} onAreaClick={onAreaClick} filterAreas={filterAreas} catColors={catColors} />
         ))}
       </div>
     </div>

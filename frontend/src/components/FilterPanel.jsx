@@ -154,7 +154,7 @@ function AreaFilter({ areas, allAreas, onChange }) {
   )
 }
 
-export default function FilterPanel({ categories, from, to, areas, allAreas, onChange }) {
+export default function FilterPanel({ categories, from, to, areas, allAreas, onChange, catColors = {} }) {
   const toggleCategory = (val) => {
     const next = categories.includes(val)
       ? categories.filter(c => c !== val)
@@ -214,7 +214,7 @@ export default function FilterPanel({ categories, from, to, areas, allAreas, onC
                   : 'bg-slate-700/40 text-slate-300 hover:bg-slate-700/70'
               }`}
             >
-              <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: CATEGORY_COLORS[type.value] }} />
+              <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: catColors[type.value] || CATEGORY_COLORS[type.value] }} />
               <span className="flex-1 text-right">{type.label}</span>
               {active && <span className="text-xs opacity-70"><Check size={14} /></span>}
             </button>

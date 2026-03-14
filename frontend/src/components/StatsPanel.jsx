@@ -1,5 +1,5 @@
 import { Activity, MapPin, TrendingUp, TrendingDown, Calendar, Target } from 'lucide-react'
-import { CATEGORY_COLORS, CATEGORY_LABELS } from '../utils/heatmap'
+import { CATEGORY_LABELS } from '../utils/heatmap'
 import { format } from 'date-fns'
 import { he } from 'date-fns/locale'
 
@@ -100,7 +100,7 @@ function ViewToggle({ historyView, onHistoryViewChange }) {
   )
 }
 
-export default function StatsPanel({ heatmapData, loading, filters, onAreaClick, historyView = 'heatmap', onHistoryViewChange, realizationData = {}, computeRealization, realizationProgress }) {
+export default function StatsPanel({ heatmapData, loading, filters, onAreaClick, historyView = 'heatmap', onHistoryViewChange, realizationData = {}, computeRealization, realizationProgress, catColors = {} }) {
   if (loading) {
     return (
       <div className="p-4 space-y-2">
@@ -293,7 +293,7 @@ export default function StatsPanel({ heatmapData, loading, filters, onAreaClick,
               {Object.entries(byCat).sort((a, b) => b[1] - a[1]).map(([cat, count]) => (
                 <div key={cat} className="flex items-center justify-between">
                   <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: CATEGORY_COLORS[cat] || '#94a3b8' }} />
+                    <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: catColors[cat] || '#94a3b8' }} />
                     <span className="text-sm text-slate-300 truncate">{CATEGORY_LABELS[cat] || `סוג ${cat}`}</span>
                   </div>
                   <span className="text-sm font-semibold text-white mr-2">{count}</span>

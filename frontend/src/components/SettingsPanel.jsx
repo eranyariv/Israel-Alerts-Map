@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { X, Mail, ChevronLeft, Download } from 'lucide-react'
 import { MAP_TILES } from '../utils/mapTiles'
+import { CATEGORY_LABELS } from '../utils/heatmap'
 import { VERSION } from '../version'
 
 const SITE_URL = 'https://yariv.org/map/'
@@ -48,6 +49,7 @@ export default function SettingsPanel({
   mapType, onMapTypeChange,
   demoMode, onDemoModeChange,
   onExportKml,
+  catColors = {}, customCatColors = {}, onCatColorChange, onCatColorsReset,
 }) {
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose() }
@@ -75,6 +77,34 @@ export default function SettingsPanel({
 
         {/* Content */}
         <div className="overflow-y-auto flex-1 p-4 space-y-6">
+
+          {/* Alert colors */}
+          <Section title="צבעי התרעות">
+            <div className="space-y-1.5">
+              {[1, 2, 3, 4, 5, 6, 7, 8].map(cat => (
+                <div key={cat} className="flex items-center gap-3 px-3 py-2 rounded-xl bg-slate-700/30">
+                  <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: catColors[cat] || '#94a3b8' }} />
+                  <span className="text-sm text-slate-300 flex-1">{CATEGORY_LABELS[cat]}</span>
+                  <input
+                    type="color"
+                    value={catColors[cat] || '#94a3b8'}
+                    onChange={e => onCatColorChange?.(cat, e.target.value)}
+                    className="w-7 h-7 border-0 cursor-pointer bg-transparent rounded"
+                    style={{ padding: 0 }}
+                  />
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={() => onCatColorsReset?.()}
+              disabled={Object.keys(customCatColors).length === 0}
+              className="w-full mt-2 px-3 py-2 rounded-xl border text-sm transition-colors
+                         bg-slate-700/30 border-slate-700/50 text-slate-300 hover:bg-slate-700/60
+                         hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              איפוס צבעים
+            </button>
+          </Section>
 
           {/* Map type */}
           <Section title="סוג מפה">
