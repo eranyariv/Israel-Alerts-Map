@@ -173,12 +173,13 @@ function getAlertAudio() {
   return _alertAudio
 }
 // Unlock audio on first user interaction (iOS requirement)
+// Use a tiny silent WAV to avoid any audible blip
+const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA='
 if (typeof document !== 'undefined') {
   const unlockAudio = () => {
     const a = getAlertAudio()
-    a.src = `${AUDIO_BASE}alert-test.mp3`
-    a.volume = 0
-    a.play().then(() => { a.pause(); a.volume = 1 }).catch(() => {})
+    a.src = SILENT_WAV
+    a.play().then(() => { a.pause() }).catch(() => {})
     document.removeEventListener('touchstart', unlockAudio)
     document.removeEventListener('click', unlockAudio)
   }
@@ -269,6 +270,7 @@ function AppInner() {
   const [localAlertVoice, setLocalAlertVoice] = useState(() => localStorage.getItem('localAlertVoice') === 'true')
   const [userLocation, setUserLocation] = useState(null) // { lat, lng }
   const [localBanner, setLocalBanner] = useState(null) // { text, color } or null
+  const [locationDenied, setLocationDenied] = useState(false)
   const prevAlertsRef = useRef([])
 
   const demoZone = useMemo(() => {
@@ -332,10 +334,11 @@ function AppInner() {
   useEffect(() => {
     if ((!localAlertEnabled && !demoMode) || !navigator.geolocation) return
     let active = true
+    setLocationDenied(false)
     const update = () => {
       navigator.geolocation.getCurrentPosition(
-        (pos) => { if (active) setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }) },
-        () => {},
+        (pos) => { if (active) { setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }); setLocationDenied(false) } },
+        (err) => { if (active && err.code === err.PERMISSION_DENIED) setLocationDenied(true) },
         { enableHighAccuracy: false, maximumAge: 30000 }
       )
     }
@@ -854,6 +857,7 @@ function AppInner() {
         onLocalAlertToggle={handleLocalAlertToggle}
         localAlertVoice={localAlertVoice}
         onLocalAlertVoiceToggle={handleLocalAlertVoiceToggle}
+        locationDenied={locationDenied}
       />
 
       {/* Mobile Bottom Sheet */}

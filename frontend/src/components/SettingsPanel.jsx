@@ -62,6 +62,7 @@ export default function SettingsPanel({
   onExportKml,
   catColors = {}, customCatColors = {}, onCatColorChange, onCatColorsReset,
   localAlertEnabled, onLocalAlertToggle, localAlertVoice, onLocalAlertVoiceToggle,
+  locationDenied,
 }) {
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose() }
@@ -110,6 +111,13 @@ export default function SettingsPanel({
                   ${localAlertEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
               </div>
             </button>
+
+            {localAlertEnabled && locationDenied && (
+              <div className="px-3 py-2.5 rounded-xl border border-amber-700/50 bg-amber-900/20 text-xs text-amber-300 text-right space-y-1">
+                <div>גישה למיקום נדחתה</div>
+                <div className="text-amber-400/70">ב-Safari: הגדרות → Safari → מיקום → אפס. ב-Chrome: לחץ על הסמל בשורת הכתובת → מיקום → אפס.</div>
+              </div>
+            )}
 
             {localAlertEnabled && (
               <button
