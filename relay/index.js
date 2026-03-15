@@ -57,6 +57,42 @@ function saveHistory() {
   }, 500)
 }
 
+// Raw event log — every WebSocket message as received, no merging, kept for 31 days
+const rawEventLog = []
+const RAW_LOG_TTL = 31 * 24 * 60 * 60 * 1000
+const RAW_LOG_FILE = '/data/raw-event-log.json'
+
+// Load persisted raw event log from disk on startup
+try {
+  const raw = readFileSync(RAW_LOG_FILE, 'utf8')
+  const data = JSON.parse(raw)
+  if (Array.isArray(data)) {
+    const cutoff = new Date(Date.now() - RAW_LOG_TTL).toISOString()
+    rawEventLog.push(...data.filter(e => e.receivedAt >= cutoff))
+    console.log(`[raw-log] loaded ${rawEventLog.length} events from disk`)
+  }
+} catch (e) {
+  if (e.code !== 'ENOENT') console.warn('[raw-log] could not load persisted log:', e.message)
+}
+
+let _saveRawTimer = null
+function saveRawLog() {
+  clearTimeout(_saveRawTimer)
+  _saveRawTimer = setTimeout(() => {
+    writeFile(RAW_LOG_FILE, JSON.stringify(rawEventLog), 'utf8', err => {
+      if (err) console.error('[raw-log] save failed:', err.message)
+    })
+  }, 2000)
+}
+
+function appendRawEvent(source, data) {
+  rawEventLog.push({ source, data, receivedAt: new Date().toISOString() })
+  // Prune entries older than 31 days
+  const cutoff = new Date(Date.now() - RAW_LOG_TTL).toISOString()
+  while (rawEventLog.length > 0 && rawEventLog[0].receivedAt < cutoff) rawEventLog.shift()
+  saveRawLog()
+}
+
 // ── Connection state tracking ─────────────────────────────────────────────
 
 const connState = {
@@ -120,6 +156,7 @@ socket.io.on('reconnect_attempt', (attempt) => {
 
 socket.on('alert', (alerts) => {
   const list = Array.isArray(alerts) ? alerts : [alerts]
+  for (const a of list) appendRawEvent('alert', a)
   for (const a of list) {
     if (!a?.type) continue
     if (a.type === 'endAlert') continue  // end signal — handled by the endAlert event
@@ -152,6 +189,7 @@ socket.on('alert', (alerts) => {
 })
 
 socket.on('endAlert', (alert) => {
+  appendRawEvent('endAlert', alert)
   const type = alert?.type
   const now  = new Date().toISOString()
   // If type is 'endAlert' (generic end signal) clear everything;
@@ -302,6 +340,7 @@ app.get('/', (req, res) => {
     <small id="status-sub"></small>
   </div>
   <a href="/history" style="font-size:.78rem;font-weight:500;opacity:.75;text-decoration:none;color:inherit;border:1px solid currentColor;border-radius:.4rem;padding:.2rem .6rem">history →</a>
+  <a href="/eventlog" style="font-size:.78rem;font-weight:500;opacity:.75;text-decoration:none;color:inherit;border:1px solid currentColor;border-radius:.4rem;padding:.2rem .6rem">event log →</a>
   <a href="/health" style="font-size:.78rem;font-weight:500;opacity:.75;text-decoration:none;color:inherit;border:1px solid currentColor;border-radius:.4rem;padding:.2rem .6rem">health →</a>
 </div>
 <script>
@@ -359,9 +398,13 @@ app.get('/', (req, res) => {
       <thead><tr><th>Endpoint</th><th>Description</th></tr></thead>
       <tbody>
         <tr><td>/active</td><td>Currently active alerts — type, Hebrew title, affected cities, start time. Empty array <code>[]</code> when quiet.</td></tr>
-        <tr><td>/history</td><td>All events since relay start, newest first. Includes <code>startedAt</code> / <code>endedAt</code> (<code>null</code> if ongoing). <a href="/history">View →</a></td></tr>
+        <tr><td>/history</td><td>All events since relay start (merged, with start/end matching). <a href="/history">View →</a></td></tr>
+        <tr><td>/history.json</td><td>Same as /history but raw JSON. Supports <code>?offset=N&limit=N&search=TERM</code>.</td></tr>
+        <tr><td>/api/history</td><td>History filtered by <code>?startDate=&endDate=&categories=</code>. Used by the frontend map.</td></tr>
+        <tr><td>/eventlog</td><td>Raw WebSocket event log (up to 31 days, persistent). Type filters, area search, shareable URLs. <a href="/eventlog">View →</a></td></tr>
+        <tr><td>/eventlog.json</td><td>Raw event log as JSON. Supports <code>?hours=N</code> (max 744 = 31 days).</td></tr>
         <tr><td>/health</td><td>Upstream connectivity status, reconnect count, diagnostics.</td></tr>
-        <tr><td>/demo</td><td>Static sample payload with all 8 alert types — for building UIs without waiting for a real alert.</td></tr>
+        <tr><td>/demo</td><td>Static sample payload with all 8 alert types — for building UIs.</td></tr>
       </tbody>
     </table>
 
@@ -490,6 +533,65 @@ app.get('/', (req, res) => {
         <li><span class="field-name">newsFlash</span><span class="field-desc">התרעה מקדימה — Preliminary warning / news flash</span></li>
       </ul>
       <a class="try-link" href="/demo">Try it →</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <span class="method">GET</span>
+      <span class="path">/api/history</span>
+      <span class="tag tag-live">live</span>
+    </div>
+    <div class="card-body">
+      <p>Filtered history for the frontend map. Returns events matching date range and categories.</p>
+      <ul class="field-list">
+        <li><span class="field-name">startDate</span><span class="field-type">query</span><span class="field-desc">ISO 8601 start date filter</span></li>
+        <li><span class="field-name">endDate</span><span class="field-type">query</span><span class="field-desc">ISO 8601 end date filter</span></li>
+        <li><span class="field-name">categories</span><span class="field-type">query</span><span class="field-desc">Comma-separated type names (defaults to all)</span></li>
+      </ul>
+      <p>Response: <code>{ data: [...], total: N }</code></p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <span class="method">GET</span>
+      <span class="path">/history.json</span>
+      <span class="tag tag-live">live</span>
+    </div>
+    <div class="card-body">
+      <p>Full history as JSON array, newest first. Supports pagination and area search.</p>
+      <ul class="field-list">
+        <li><span class="field-name">offset</span><span class="field-type">query</span><span class="field-desc">Skip N entries (default 0)</span></li>
+        <li><span class="field-name">limit</span><span class="field-type">query</span><span class="field-desc">Return at most N entries (0 = all)</span></li>
+        <li><span class="field-name">search</span><span class="field-type">query</span><span class="field-desc">Filter by area name (substring match)</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <span class="method">GET</span>
+      <span class="path">/eventlog</span>
+      <span class="tag tag-live">live</span>
+    </div>
+    <div class="card-body">
+      <p>Raw WebSocket event log — every message as received from RedAlert, no merging. Interactive HTML page with type filters, area search, and shareable URLs.</p>
+      <a class="try-link" href="/eventlog">View →</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <span class="method">GET</span>
+      <span class="path">/eventlog.json</span>
+      <span class="tag tag-live">live</span>
+    </div>
+    <div class="card-body">
+      <p>Raw event log as JSON. Each entry contains <code>source</code> ("alert" or "endAlert"), <code>data</code> (the raw WebSocket payload), and <code>receivedAt</code> timestamp.</p>
+      <ul class="field-list">
+        <li><span class="field-name">hours</span><span class="field-type">query</span><span class="field-desc">How many hours back (default 24, max 744 = 31 days)</span></li>
+      </ul>
     </div>
   </div>
 
@@ -858,6 +960,277 @@ app.get('/history', (req, res) => {
 
   // Initial load
   loadMore()
+</script>
+</body>
+</html>`)
+})
+
+// Raw event log JSON — every WebSocket message, newest first, last 24h
+app.get('/eventlog.json', (req, res) => {
+  const hours = Math.min(parseInt(req.query.hours ?? '24', 10) || 24, 744)
+  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
+  const events = rawEventLog.filter(e => e.receivedAt >= cutoff).reverse()
+  res.json({ total: events.length, events })
+})
+
+// Event log HTML — raw WebSocket events, type filtering, area search, shareable URL
+app.get('/eventlog', (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RedAlert Relay — Raw Event Log</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+  body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; padding: 1.5rem; line-height: 1.5 }
+  h1 { font-size: 1.3rem; font-weight: 700; color: #f8fafc; margin-bottom: .2rem }
+  .sub { color: #64748b; font-size: .85rem; margin-bottom: 1.25rem }
+  .sub a { color: #60a5fa; text-decoration: none }
+  .sub a:hover { text-decoration: underline }
+
+  .filters { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .75rem; align-items: center }
+  .search-input { background: #1e293b; border: 1px solid #334155; color: #e2e8f0; border-radius: .4rem;
+                  padding: .45rem .75rem; font-size: .85rem; outline: none; width: 200px; direction: rtl }
+  .search-input::placeholder { color: #475569 }
+  .search-input:focus { border-color: #3b82f6 }
+  .type-btn { background: #1e293b; border: 1px solid #334155; color: #94a3b8; border-radius: .4rem;
+              padding: .35rem .7rem; font-size: .75rem; font-weight: 600; cursor: pointer; transition: all .15s }
+  .type-btn:hover { border-color: #60a5fa; color: #e2e8f0 }
+  .type-btn.active { background: #1d4ed8; border-color: #3b82f6; color: #bfdbfe }
+  .count-badge { font-size: .75rem; color: #94a3b8; background: #1e293b; border: 1px solid #334155;
+                 border-radius: 999px; padding: .1rem .6rem }
+  .share-row { display: flex; gap: .5rem; margin-bottom: 1rem; align-items: center }
+  .share-btn { background: #1e293b; border: 1px solid #334155; color: #94a3b8; border-radius: .4rem;
+               padding: .35rem .7rem; font-size: .75rem; font-weight: 600; cursor: pointer; transition: all .15s }
+  .share-btn:hover { border-color: #60a5fa; color: #e2e8f0 }
+  .share-btn.copied { background: #14532d; border-color: #22c55e; color: #86efac }
+
+  table { width: 100%; border-collapse: collapse; font-size: .85rem }
+  thead th { background: #1e293b; color: #94a3b8; font-weight: 600; font-size: .72rem; text-transform: uppercase;
+             letter-spacing: .05em; padding: .55rem .75rem; text-align: left; border-bottom: 2px solid #334155;
+             position: sticky; top: 0; z-index: 1 }
+  tbody tr { border-bottom: 1px solid #1e293b; transition: background .1s }
+  tbody tr:hover { background: #1a2035 }
+  tr.row-end td { background: #0a1a14 }
+  tr.row-end:hover td { background: #0f2018 }
+  td { padding: .5rem .75rem; vertical-align: top }
+  .td-time { white-space: nowrap; color: #94a3b8; font-size: .78rem; font-family: monospace }
+  .td-source { font-size: .65rem; font-weight: 700; border-radius: .25rem; padding: .12rem .4rem; display: inline-block }
+  .src-alert { background: #7f1d1d; color: #fca5a5; border: 1px solid #ef4444 }
+  .src-end { background: #14532d; color: #86efac; border: 1px solid #22c55e }
+  .td-type { font-weight: 600; color: #f1f5f9; white-space: nowrap; font-size: .82rem }
+
+  .td-cities details { cursor: pointer }
+  .td-cities summary { color: #60a5fa; font-size: .8rem; list-style: none; display: inline-flex; align-items: center; gap: .25rem }
+  .td-cities summary::before { content: '▶'; font-size: .55rem; transition: transform .15s }
+  details[open] summary::before { transform: rotate(90deg) }
+  .td-cities ul { margin-top: .3rem; padding-right: .8rem; list-style: disc; color: #cbd5e1; font-size: .78rem;
+                  display: flex; flex-direction: column; gap: .1rem }
+  .td-cities .hl { color: #facc15; font-weight: 600 }
+  .empty { text-align: center; color: #475569; padding: 2rem; font-size: .9rem }
+</style>
+</head>
+<body>
+<h1>📋 Raw Event Log</h1>
+<p class="sub">Every WebSocket message as received — no merging or matching &nbsp;·&nbsp; <a href="/">← API docs</a></p>
+
+<div class="filters">
+  <select id="hours-select" class="search-input" style="width:auto;direction:ltr" onchange="changeHours()">
+    <option value="6">Last 6 hours</option>
+    <option value="24" selected>Last 24 hours</option>
+    <option value="72">Last 3 days</option>
+    <option value="168">Last 7 days</option>
+    <option value="744">Last 31 days</option>
+  </select>
+  <input id="search" class="search-input" type="text" placeholder="Search area…" />
+  <button class="type-btn active" data-type="all" onclick="toggleType('all')">All</button>
+  <button class="type-btn" data-type="endAlert" onclick="toggleType('endAlert')">🟢 End</button>
+  <button class="type-btn" data-type="missiles" onclick="toggleType('missiles')">🚀 Missiles</button>
+  <button class="type-btn" data-type="hostileAircraftIntrusion" onclick="toggleType('hostileAircraftIntrusion')">✈️ Aircraft</button>
+  <button class="type-btn" data-type="terroristInfiltration" onclick="toggleType('terroristInfiltration')">🔫 Infiltration</button>
+  <button class="type-btn" data-type="earthQuake" onclick="toggleType('earthQuake')">🌍 Earthquake</button>
+  <button class="type-btn" data-type="newsFlash" onclick="toggleType('newsFlash')">📢 News</button>
+  <button class="type-btn" data-type="radiologicalEvent" onclick="toggleType('radiologicalEvent')">☢️ Radiological</button>
+  <button class="type-btn" data-type="tsunami" onclick="toggleType('tsunami')">🌊 Tsunami</button>
+  <button class="type-btn" data-type="hazardousMaterials" onclick="toggleType('hazardousMaterials')">☣️ Hazmat</button>
+  <span class="count-badge" id="count">…</span>
+</div>
+<div class="share-row">
+  <button class="share-btn" id="share-btn" onclick="shareUrl()">📋 Copy shareable link</button>
+</div>
+
+<table>
+  <thead><tr><th>Received (IL)</th><th>Source</th><th>Type</th><th>Areas</th></tr></thead>
+  <tbody id="tbody"></tbody>
+</table>
+
+<script>
+  const TYPE_LABELS = {
+    missiles: '🚀 Missiles', hostileAircraftIntrusion: '✈️ Hostile Aircraft',
+    terroristInfiltration: '🔫 Infiltration', earthQuake: '🌍 Earthquake',
+    radiologicalEvent: '☢️ Radiological', tsunami: '🌊 Tsunami',
+    hazardousMaterials: '☣️ Hazmat', newsFlash: '📢 News Flash',
+    endAlert: '🟢 End Alert',
+  }
+
+  let allEvents = []
+  let activeTypes = new Set(['all'])
+  let searchTerm = ''
+  let selectedHours = 24
+
+  function changeHours() {
+    selectedHours = parseInt(document.getElementById('hours-select').value, 10) || 24
+    updateHash()
+    fetchEvents()
+  }
+
+  // Restore filters from URL hash
+  function loadFromHash() {
+    try {
+      const params = new URLSearchParams(location.hash.slice(1))
+      const types = params.get('types')
+      const search = params.get('search')
+      const hours = params.get('hours')
+      if (types) {
+        activeTypes = new Set(types.split(',').filter(Boolean))
+        if (activeTypes.size === 0) activeTypes.add('all')
+      }
+      if (search) {
+        searchTerm = search
+        document.getElementById('search').value = search
+      }
+      if (hours) {
+        selectedHours = parseInt(hours, 10) || 24
+        document.getElementById('hours-select').value = String(selectedHours)
+      }
+      document.querySelectorAll('.type-btn').forEach(b => {
+        b.classList.toggle('active', activeTypes.has(b.dataset.type))
+      })
+    } catch {}
+  }
+
+  function updateHash() {
+    const params = new URLSearchParams()
+    if (!activeTypes.has('all')) params.set('types', [...activeTypes].join(','))
+    if (searchTerm.trim()) params.set('search', searchTerm.trim())
+    if (selectedHours !== 24) params.set('hours', String(selectedHours))
+    const hash = params.toString()
+    history.replaceState(null, '', hash ? '#' + hash : location.pathname)
+  }
+
+  function shareUrl() {
+    updateHash()
+    const url = location.href
+    navigator.clipboard.writeText(url).then(() => {
+      const btn = document.getElementById('share-btn')
+      btn.textContent = '✓ Copied!'
+      btn.classList.add('copied')
+      setTimeout(() => { btn.textContent = '📋 Copy shareable link'; btn.classList.remove('copied') }, 2000)
+    }).catch(() => { prompt('Copy this URL:', url) })
+  }
+
+  function fmtTime(iso) {
+    if (!iso) return '—'
+    return new Date(iso).toLocaleString('en-GB', {
+      timeZone: 'Asia/Jerusalem', day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    })
+  }
+
+  function toggleType(type) {
+    if (type === 'all') {
+      activeTypes = new Set(['all'])
+    } else {
+      activeTypes.delete('all')
+      if (activeTypes.has(type)) activeTypes.delete(type)
+      else activeTypes.add(type)
+      if (activeTypes.size === 0) activeTypes.add('all')
+    }
+    document.querySelectorAll('.type-btn').forEach(b => {
+      b.classList.toggle('active', activeTypes.has(b.dataset.type))
+    })
+    updateHash()
+    render()
+  }
+
+  function getEventType(e) {
+    if (e.source === 'endAlert') return 'endAlert'
+    return e.data?.type || 'unknown'
+  }
+
+  function render() {
+    const search = searchTerm.trim().toLowerCase()
+    const filtered = allEvents.filter(e => {
+      const type = getEventType(e)
+      if (!activeTypes.has('all') && !activeTypes.has(type)) return false
+      if (search) {
+        const cities = e.data?.cities || []
+        if (!cities.some(c => (typeof c === 'string' ? c : '').toLowerCase().includes(search))) return false
+      }
+      return true
+    })
+
+    document.getElementById('count').textContent = filtered.length + ' events'
+
+    const tbody = document.getElementById('tbody')
+    if (!filtered.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="empty">No events match the filters</td></tr>'
+      return
+    }
+
+    tbody.innerHTML = filtered.map(e => {
+      const type = getEventType(e)
+      const isEnd = e.source === 'endAlert'
+      const label = TYPE_LABELS[type] || type
+      const srcBadge = isEnd
+        ? '<span class="td-source src-end">endAlert</span>'
+        : '<span class="td-source src-alert">alert</span>'
+      const cities = Array.isArray(e.data?.cities) ? e.data.cities.filter(Boolean) : []
+      let cityHtml
+      if (!cities.length) {
+        cityHtml = '<span style="color:#475569">—</span>'
+      } else {
+        const items = cities.map(c => {
+          const cs = typeof c === 'string' ? c : String(c)
+          if (search && cs.toLowerCase().includes(search)) {
+            const esc = search.replace(/[.*+?^\${}()|[\\]\\\\]/g, '\\\\$$&')
+            return '<li>' + cs.replace(new RegExp('(' + esc + ')', 'gi'), '<span class="hl">$$1</span>') + '</li>'
+          }
+          return '<li>' + cs + '</li>'
+        }).join('')
+        cityHtml = '<details><summary>' + cities.length + ' area' + (cities.length !== 1 ? 's' : '') + '</summary><ul>' + items + '</ul></details>'
+      }
+      return '<tr class="' + (isEnd ? 'row-end' : '') + '">' +
+        '<td class="td-time">' + fmtTime(e.receivedAt) + '</td>' +
+        '<td>' + srcBadge + '</td>' +
+        '<td class="td-type">' + label + '</td>' +
+        '<td class="td-cities">' + cityHtml + '</td></tr>'
+    }).join('')
+  }
+
+  document.getElementById('search').addEventListener('input', function(ev) {
+    searchTerm = ev.target.value
+    updateHash()
+    render()
+  })
+
+  function fetchEvents() {
+    document.getElementById('tbody').innerHTML = '<tr><td colspan="4" class="empty">Loading…</td></tr>'
+    fetch('/eventlog.json?hours=' + selectedHours)
+      .then(r => r.json())
+      .then(json => {
+        allEvents = json.events || []
+        render()
+      })
+      .catch(() => {
+        document.getElementById('tbody').innerHTML = '<tr><td colspan="4" class="empty">Failed to load events</td></tr>'
+      })
+  }
+
+  loadFromHash()
+  fetchEvents()
 </script>
 </body>
 </html>`)
