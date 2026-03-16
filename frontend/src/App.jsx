@@ -13,6 +13,7 @@ import BottomSheet from './components/BottomSheet'
 import DebugPanel from './components/DebugPanel'
 import SettingsPanel from './components/SettingsPanel'
 import { useAlerts, buildHeatmap } from './hooks/useAlerts'
+import { computePeakHours, computeDuration, computeSimultaneous, computeSequences } from './utils/analytics'
 import { VERSION } from './version'
 import { DEFAULT_MAP_TYPE } from './utils/mapTiles'
 
@@ -428,6 +429,12 @@ function AppInner() {
     return rawEvents.filter(e => e.cities.some(c => areaSet.has(c)))
   }, [rawEvents, filters.areas])
 
+  // Analytics for new history views
+  const peakHoursData = useMemo(() => computePeakHours(filteredHeatmap?.byCity ?? {}), [filteredHeatmap])
+  const durationData = useMemo(() => computeDuration(filteredHeatmap?.byCity ?? {}), [filteredHeatmap])
+  const simultaneousData = useMemo(() => computeSimultaneous(filteredEvents), [filteredEvents])
+  const sequenceData = useMemo(() => computeSequences(filteredEvents), [filteredEvents])
+
   // Clear realization data when inputs change
   useEffect(() => {
     setRealizationData({})
@@ -577,7 +584,7 @@ function AppInner() {
       return <LivePanel currentAlerts={visibleAlerts} lastRefresh={lastRefresh} loading={loading} onAreaClick={setFlyToArea} catColors={catColors} demoMode={demoMode} />
     }
     switch (sidebarTab) {
-      case 'stats':   return <StatsPanel heatmapData={filteredHeatmap} loading={loading} filters={filters} onAreaClick={setFlyToArea} historyView={historyView} onHistoryViewChange={setHistoryView} realizationData={realizationData} computeRealization={computeRealization} realizationProgress={realizationProgress} catColors={catColors} />
+      case 'stats':   return <StatsPanel heatmapData={filteredHeatmap} loading={loading} filters={filters} onAreaClick={setFlyToArea} historyView={historyView} onHistoryViewChange={setHistoryView} realizationData={realizationData} computeRealization={computeRealization} realizationProgress={realizationProgress} catColors={catColors} peakHoursData={peakHoursData} durationData={durationData} simultaneousData={simultaneousData} sequenceData={sequenceData} />
       case 'events':  return <EventsLog events={filteredEvents} loading={loading} onAreaClick={setFlyToArea} filterAreas={filters.areas} catColors={catColors} />
       case 'filters': return <FilterPanel {...filters} allAreas={allAreas} onChange={handleFilterChange} catColors={catColors} />
       default:        return null
@@ -696,7 +703,7 @@ function AppInner() {
 
       {/* -- Map ------------------------------------------------------------- */}
       <main className="flex-1 relative">
-        <Map heatmapData={heatmapData} currentAlerts={currentAlerts} flyToArea={flyToArea} mode={mode} mapType={mapType} historyView={historyView} realizationData={realizationData} catColors={catColors} />
+        <Map heatmapData={heatmapData} currentAlerts={currentAlerts} flyToArea={flyToArea} mode={mode} mapType={mapType} historyView={historyView} realizationData={realizationData} catColors={catColors} peakHoursData={peakHoursData} durationData={durationData} simultaneousData={simultaneousData} sequenceData={sequenceData} />
 
         {/* Local alert banner — flashing, floating above all map controls */}
         {localBanner && (
@@ -874,7 +881,7 @@ function AppInner() {
         {bottomSheetTab === 'live'
           ? <LivePanel currentAlerts={visibleAlerts} lastRefresh={lastRefresh} loading={loading} onAreaClick={setFlyToArea} catColors={catColors} demoMode={demoMode} />
           : bottomSheetTab === 'stats'
-            ? <StatsPanel heatmapData={filteredHeatmap} loading={loading} filters={filters} onAreaClick={setFlyToArea} historyView={historyView} onHistoryViewChange={setHistoryView} realizationData={realizationData} computeRealization={computeRealization} realizationProgress={realizationProgress} catColors={catColors} />
+            ? <StatsPanel heatmapData={filteredHeatmap} loading={loading} filters={filters} onAreaClick={setFlyToArea} historyView={historyView} onHistoryViewChange={setHistoryView} realizationData={realizationData} computeRealization={computeRealization} realizationProgress={realizationProgress} catColors={catColors} peakHoursData={peakHoursData} durationData={durationData} simultaneousData={simultaneousData} sequenceData={sequenceData} />
             : bottomSheetTab === 'events'
               ? <EventsLog events={filteredEvents} loading={loading} onAreaClick={setFlyToArea} filterAreas={filters.areas} catColors={catColors} />
               : <FilterPanel {...filters} allAreas={allAreas} onChange={handleFilterChange} catColors={catColors} />

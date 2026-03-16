@@ -21,7 +21,7 @@ function fmtDuration(start, end) {
 function CityChip({ city, onAreaClick, highlight }) {
   return (
     <button
-      onClick={() => onAreaClick?.(city)}
+      onClick={(e) => { e.stopPropagation(); onAreaClick?.(city) }}
       className={`text-xs px-1.5 py-0.5 rounded transition-colors
         ${highlight
           ? 'bg-blue-900/50 border border-blue-700/50 text-blue-300 hover:text-blue-200 hover:bg-blue-800/50'
@@ -45,7 +45,10 @@ function EventRow({ event, onAreaClick, filterAreas, catColors = {} }) {
   const rest    = filterSet ? allCities.filter(c => !filterSet.has(c)) : allCities
 
   return (
-    <div className="bg-slate-700/40 rounded-xl p-3 space-y-2">
+    <div
+      className="bg-slate-700/40 rounded-xl p-3 space-y-2 cursor-pointer hover:bg-slate-700/60 transition-colors"
+      onClick={() => allCities.length > 0 && onAreaClick?.(allCities)}
+    >
       {/* Header: category + status */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -94,7 +97,7 @@ function EventRow({ event, onAreaClick, filterAreas, catColors = {} }) {
                 {rest.length > 0 && (
                   <>
                     <button
-                      onClick={() => setExpanded(e => !e)}
+                      onClick={(e) => { e.stopPropagation(); setExpanded(v => !v) }}
                       className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300 transition-colors"
                     >
                       {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
@@ -114,7 +117,7 @@ function EventRow({ event, onAreaClick, filterAreas, catColors = {} }) {
               <>
                 {/* No filter — show count with expand */}
                 <button
-                  onClick={() => setExpanded(e => !e)}
+                  onClick={(e) => { e.stopPropagation(); setExpanded(v => !v) }}
                   className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-300 transition-colors"
                 >
                   {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}

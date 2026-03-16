@@ -4,6 +4,7 @@ import L from 'leaflet'
 import { Locate, Maximize2, Ruler } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
 import { getHeatColor } from '../utils/heatmap'
+import { getHourColor } from '../utils/analytics'
 import { MAP_TILES, DEFAULT_MAP_TYPE } from '../utils/mapTiles'
 
 const ISRAEL_CENTER = [31.0461, 34.8516]
@@ -193,13 +194,17 @@ function FlyToArea({ areaName, zones }) {
   const prevRef = useRef(null)
 
   useEffect(() => {
-    if (!areaName || !zones || areaName === prevRef.current) return
-    prevRef.current = areaName
-    const feature = zones.features.find(f => f.properties.name === areaName)
-    if (!feature) return
+    if (!areaName || !zones) return
+    const key = JSON.stringify(areaName)
+    if (key === prevRef.current) return
+    prevRef.current = key
+
+    const names = Array.isArray(areaName) ? areaName : [areaName]
+    const features = zones.features.filter(f => names.includes(f.properties.name))
+    if (!features.length) return
     try {
-      const bounds = L.geoJSON(feature).getBounds()
-      map.flyToBounds(bounds, { padding: [60, 60], maxZoom: 13, duration: 1.2 })
+      const group = L.featureGroup(features.map(f => L.geoJSON(f)))
+      map.flyToBounds(group.getBounds(), { padding: [60, 60], maxZoom: 13, duration: 1.2 })
     } catch {}
   }, [areaName, zones, map])
 
@@ -221,7 +226,7 @@ function LiveFlyTo({ currentAlerts }) {
   return null
 }
 
-export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapType = DEFAULT_MAP_TYPE, historyView = 'heatmap', realizationData = {}, catColors = {} }) {
+export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapType = DEFAULT_MAP_TYPE, historyView = 'heatmap', realizationData = {}, catColors = {}, peakHoursData = {}, durationData = {}, simultaneousData = {}, sequenceData = {} }) {
   const [zones, setZones] = useState(null)
   const [rulerActive, setRulerActive] = useState(false)
 
@@ -288,51 +293,60 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
     } catch { return null }
   }
 
+  const defaultEmpty = { fillColor: '#1e3a5f', fillOpacity: 0.12, color: '#2d4a6b', weight: 0.4 }
+
   const getStyle = (feature) => {
     const name = feature.properties.name
     if (mode === 'live') {
       if (liveZones.has(name)) {
         const liveColor = CAT_COLORS[liveAlertMap[name]] ?? '#ef4444'
-        return {
-          fillColor:   liveColor,
-          fillOpacity: 0.75,
-          color:       liveColor,
-          weight:      2,
-        }
+        return { fillColor: liveColor, fillOpacity: 0.75, color: liveColor, weight: 2 }
       }
-      return {
-        fillColor:   '#1e3a5f',
-        fillOpacity: 0.08,
-        color:       '#2d4a6b',
-        weight:      0.3,
-      }
+      return { fillColor: '#1e3a5f', fillOpacity: 0.08, color: '#2d4a6b', weight: 0.3 }
     }
-    // Realization view
+
     if (historyView === 'realization') {
       const rd = realizationData[name]
-      if (!rd || rd.total === 0) return {
-        fillColor: '#1e3a5f', fillOpacity: 0.12, color: '#2d4a6b', weight: 0.4,
-      }
+      if (!rd || rd.total === 0) return defaultEmpty
       const norm = rd.ratio / maxRatio
       const hue = Math.round(120 * (1 - norm))
       const c = `hsl(${hue}, 85%, 42%)`
       return { fillColor: c, fillOpacity: 0.72, color: c, weight: 1 }
     }
 
+    if (historyView === 'peakHours') {
+      const ph = peakHoursData[name]
+      if (!ph) return defaultEmpty
+      const c = getHourColor(ph.peakHour)
+      return { fillColor: c, fillOpacity: 0.72, color: c, weight: 1 }
+    }
+
+    if (historyView === 'duration') {
+      const dd = durationData?.data?.[name]
+      if (!dd) return defaultEmpty
+      const c = getHeatColor(dd.totalMinutes, durationData.maxMinutes)
+      return { fillColor: c, fillOpacity: 0.72, color: c, weight: 1 }
+    }
+
+    if (historyView === 'simultaneous') {
+      const val = simultaneousData?.byCity?.[name]
+      if (!val) return defaultEmpty
+      const c = getHeatColor(val, simultaneousData.maxByCity)
+      return { fillColor: c, fillOpacity: 0.72, color: c, weight: 1 }
+    }
+
+    if (historyView === 'sequences') {
+      const val = sequenceData?.byCity?.[name]
+      if (!val) return defaultEmpty
+      const c = getHeatColor(val, sequenceData.maxScore)
+      return { fillColor: c, fillOpacity: 0.72, color: c, weight: 1 }
+    }
+
+    // Default: heatmap
     const count = counts[name] ?? 0
-    if (count === 0) return {
-      fillColor:   '#1e3a5f',
-      fillOpacity: 0.12,
-      color:       '#2d4a6b',
-      weight:      0.4,
-    }
+    if (count === 0) return defaultEmpty
     const color = getHeatColor(count, maxCount)
-    return {
-      fillColor:   color,
-      fillOpacity: 0.72,
-      color:       color,
-      weight:      1,
-    }
+    return { fillColor: color, fillOpacity: 0.72, color: color, weight: 1 }
   }
 
   const onEachFeature = (feature, layer) => {
@@ -353,33 +367,8 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
       )
       return
     }
-    // Realization tooltip
-    if (historyView === 'realization') {
-      const rd = realizationData[name]
-      if (!rd || rd.total === 0) {
-        layer.bindTooltip(
-          `<div dir="rtl" style="font-family:Assistant,sans-serif;min-width:130px">
-             <div style="font-weight:700;font-size:14px;margin-bottom:4px">${name}</div>
-             <div style="color:#94a3b8;font-size:12px">אין התרעות מקדימות</div>
-           </div>`,
-          { direction: 'top', sticky: false }
-        )
-      } else {
-        const pct = Math.round(rd.ratio * 100)
-        const norm = rd.ratio / maxRatio
-        const hue = Math.round(120 * (1 - norm))
-        layer.bindTooltip(
-          `<div dir="rtl" style="font-family:Assistant,sans-serif;min-width:150px">
-             <div style="font-weight:700;font-size:14px;margin-bottom:4px">${name}</div>
-             <div style="color:hsl(${hue},85%,55%);font-weight:600;font-size:15px">${pct}% מימוש</div>
-             <div style="color:#94a3b8;font-size:11px;margin-top:2px">${rd.correct} מתוך ${rd.total} התרעות מקדימות</div>
-           </div>`,
-          { direction: 'top', sticky: false }
-        )
-      }
-      return
-    }
 
+    // Unified tooltip for all history views
     const count = counts[name] ?? 0
     const last  = fmtDate(lastAlert[name])
     layer.bindTooltip(
@@ -464,11 +453,16 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
   }
 
   // key forces full re-render when data changes
+  const histDataLen = [
+    Object.keys(realizationData).length,
+    Object.keys(peakHoursData).length,
+    Object.keys(durationData?.data || {}).length,
+    Object.keys(simultaneousData?.byCity || {}).length,
+    Object.keys(sequenceData?.byCity || {}).length,
+  ].join('-')
   const zonesKey = mode === 'live'
     ? `live-${currentAlerts.map(a => a.id).join(',')}-${liveZones.size}`
-    : historyView === 'realization'
-      ? `real-${Object.keys(realizationData).length}-${heatmapData?.total ?? 0}-${rulerActive}`
-      : `zones-${heatmapData?.total ?? 0}-${maxCount}-${rulerActive}`
+    : `${historyView}-${heatmapData?.total ?? 0}-${maxCount}-${histDataLen}-${rulerActive}`
 
   return (
     <div dir="ltr" className="w-full h-full">
