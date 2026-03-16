@@ -1,15 +1,13 @@
 /**
- * Logarithmic colour scale: green (0) → red (max).
+ * Power-scale colour: green (0) → red (max).
  *
- * We use log(count + 1) / log(maxCount + 1) so:
- *  - 0 alerts  → hue 120 (green)
- *  - maxCount  → hue 0   (red)
- *  - A few alerts don't immediately go red even when max is large.
+ * Uses (count/max)^0.4 for a wide spread across the green→red range.
+ * Low counts stay green/yellow, only the highest values reach red.
  */
 export function getHeatColor(count, maxCount) {
   if (!count || count === 0) return 'hsl(120, 70%, 42%)'
   if (!maxCount || maxCount === 0) return 'hsl(120, 70%, 42%)'
-  const t = Math.log(count + 1) / Math.log(maxCount + 1)
+  const t = Math.pow(Math.min(count / maxCount, 1), 0.4)
   const hue = Math.round(120 * (1 - t)) // 120 = green, 0 = red
   const saturation = 85
   const lightness = 42

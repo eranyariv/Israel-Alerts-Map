@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { RefreshCw, SlidersHorizontal, BarChart2, Shield, Settings, ScrollText } from 'lucide-react'
+import { RefreshCw, SlidersHorizontal, BarChart2, Shield, Settings, ScrollText, Share2, Download, Bell, X, MapPin } from 'lucide-react'
 import { formatTime } from './utils/dateFormat'
 import { ALL_CATEGORIES, CATEGORY_COLORS } from './utils/heatmap'
 
@@ -16,6 +16,7 @@ import { useAlerts, buildHeatmap } from './hooks/useAlerts'
 import { computePeakHours, computeDuration, computeSimultaneous, computeSequences } from './utils/analytics'
 import { VERSION } from './version'
 import { DEFAULT_MAP_TYPE } from './utils/mapTiles'
+import { trackEvent } from './utils/ga'
 
 const HISTORY_TABS = [
   { id: 'stats',   label: 'סטטיסטיקה',    Icon: BarChart2 },
@@ -273,6 +274,11 @@ function AppInner() {
   const [localBanner, setLocalBanner] = useState(null) // { text, color } or null
   const [locationDenied, setLocationDenied] = useState(false)
   const prevAlertsRef = useRef([])
+  const [installPrompt, setInstallPrompt] = useState(null)
+  const [showInstall, setShowInstall] = useState(false)
+  const [notifHintDismissed, setNotifHintDismissed] = useState(() => localStorage.getItem('notifHintDismissed') === 'true')
+  const [copied, setCopied] = useState(false)
+  const autoZoomRef = useRef(!localStorage.getItem('firstVisitZoomed'))
 
   const demoZone = useMemo(() => {
     if (!demoMode || !userLocation || !zonesGeoJson) return null
@@ -290,6 +296,7 @@ function AppInner() {
     localStorage.setItem('localAlertEnabled', String(enabled))
     if (!enabled) setUserLocation(null)
     if (enabled) requestNotificationPermission()
+    trackEvent('local_alert_toggle', { enabled })
   }, [])
 
   const handleLocalAlertVoiceToggle = useCallback((enabled) => {
@@ -309,6 +316,73 @@ function AppInner() {
         setZonesGeoJson(data)
       })
       .catch(() => {})
+  }, [])
+
+  // PWA install prompt
+  useEffect(() => {
+    if (localStorage.getItem('installDismissed')) return
+    const handler = (e) => { e.preventDefault(); setInstallPrompt(e); setShowInstall(true); trackEvent('install_prompt_shown') }
+    window.addEventListener('beforeinstallprompt', handler)
+    return () => window.removeEventListener('beforeinstallprompt', handler)
+  }, [])
+
+  const handleInstall = useCallback(async () => {
+    if (!installPrompt) return
+    installPrompt.prompt()
+    const result = await installPrompt.userChoice
+    trackEvent('install_prompt_result', { outcome: result.outcome })
+    setShowInstall(false)
+    setInstallPrompt(null)
+  }, [installPrompt])
+
+  const dismissInstall = useCallback(() => {
+    setShowInstall(false)
+    localStorage.setItem('installDismissed', 'true')
+    trackEvent('install_prompt_dismissed')
+  }, [])
+
+  // Auto-zoom to user's area on first visit
+  useEffect(() => {
+    if (!autoZoomRef.current || !navigator.geolocation) return
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+        localStorage.setItem('firstVisitZoomed', 'true')
+        trackEvent('auto_zoom_granted')
+      },
+      () => { localStorage.setItem('firstVisitZoomed', 'true') },
+      { enableHighAccuracy: false, timeout: 8000 }
+    )
+  }, [])
+
+  // User's zone identification + auto fly-to on first visit
+  const userZone = useMemo(() => {
+    if (!userLocation || !zonesGeoJson) return null
+    return findUserZone(userLocation.lat, userLocation.lng, zonesGeoJson)
+  }, [userLocation, zonesGeoJson])
+
+  const userZoneStats = useMemo(() => {
+    if (!userZone || !heatmapData) return null
+    return { zone: userZone, count: heatmapData.counts?.[userZone] ?? 0, lastAlert: heatmapData.lastAlert?.[userZone] ?? null }
+  }, [userZone, heatmapData])
+
+  useEffect(() => {
+    if (autoZoomRef.current && userZone) {
+      setFlyToArea(userZone)
+      autoZoomRef.current = false
+    }
+  }, [userZone])
+
+  // Share handler
+  const handleShare = useCallback(async () => {
+    trackEvent('share_click')
+    const url = 'https://yariv.org/map/'
+    const text = `מפת התרעות ישראל בזמן אמת\n${url}`
+    if (navigator.share) {
+      try { await navigator.share({ title: 'מפת התרעות ישראל', text, url }) } catch {}
+    } else {
+      try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000) } catch {}
+    }
   }, [])
 
   // Toggle debug with backtick key (works on desktop + physical keyboards on mobile)
@@ -389,7 +463,6 @@ function AppInner() {
   const handleRefresh = () => mode !== 'live' && refresh(filters)
   const handleFilterChange = (next) => {
     setFilters(next)
-    // Only re-fetch from API if categories or dates changed (not just areas)
     const catsChanged  = JSON.stringify(next.categories) !== JSON.stringify(filters.categories)
     const datesChanged = next.from?.toISOString() !== filters.from?.toISOString() ||
                          next.to?.toISOString()   !== filters.to?.toISOString()
@@ -400,7 +473,23 @@ function AppInner() {
       categories: next.categories,
       areas: next.areas,
     }))
+    trackEvent('filter_change', { categories: next.categories.length, hasAreaFilter: !!(next.areas?.length) })
   }
+
+  const handleHistoryViewChange = useCallback((view) => {
+    setHistoryView(view)
+    trackEvent('view_change', { view })
+  }, [])
+
+  const handleAreaClick = useCallback((area) => {
+    trackEvent('area_click', { area: typeof area === 'string' ? area : `${area.length}_areas` })
+    setFlyToArea(area)
+  }, [])
+
+  const dismissNotifHint = useCallback(() => {
+    setNotifHintDismissed(true)
+    localStorage.setItem('notifHintDismissed', 'true')
+  }, [])
 
   const visibleAlerts = currentAlerts.filter(a => a.id !== dismissedId)
 
@@ -409,6 +498,7 @@ function AppInner() {
   const handleModeChange = useCallback((next) => {
     setMode(next)
     localStorage.setItem('viewMode', next)
+    trackEvent('mode_change', { mode: next })
   }, [])
 
   // Area-filtered heatmap for stats panel (map always shows all data)
@@ -579,13 +669,52 @@ function AppInner() {
     URL.revokeObjectURL(url)
   }, [zonesGeoJson, filteredHeatmap, realizationData, historyView])
 
+  const renderPromoBanners = () => (
+    <>
+      {/* PWA Install banner */}
+      {showInstall && (
+        <div className="mx-4 mt-3 px-3 py-2.5 bg-blue-900/40 border border-blue-700/50 rounded-lg flex items-center gap-2">
+          <Download size={14} className="text-blue-400 shrink-0" />
+          <span className="text-xs text-blue-200 flex-1">התקן לגישה מהירה</span>
+          <button onClick={handleInstall} className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 px-2.5 py-1 rounded-md transition-colors">התקן</button>
+          <button onClick={dismissInstall} className="text-slate-500 hover:text-slate-300 p-0.5"><X size={12} /></button>
+        </div>
+      )}
+      {/* User area card */}
+      {userZoneStats && (() => {
+        const zoneActive = currentAlerts.some(a => a.cities?.includes(userZoneStats.zone))
+        return (
+        <div className={`mx-4 mt-3 px-3 py-2.5 rounded-lg border ${zoneActive ? 'bg-red-900/40 border-red-700/50' : 'bg-slate-700/50 border-slate-600/50'}`}>
+          <button onClick={() => handleAreaClick(userZoneStats.zone)} className="flex items-center gap-2 w-full hover:opacity-80 transition-opacity">
+            <MapPin size={14} className={zoneActive ? 'text-red-400' : 'text-green-400'} />
+            <span className="text-xs text-slate-200 font-semibold truncate">{userZoneStats.zone}</span>
+            {zoneActive
+              ? <span className="text-xs text-red-400 font-bold shrink-0">התרעה פעילה!</span>
+              : <span className="text-xs text-slate-500 shrink-0">{userZoneStats.count} התרעות עבר</span>
+            }
+          </button>
+          {/* Notification hint */}
+          {!localAlertEnabled && !notifHintDismissed && (
+            <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-600/50">
+              <Bell size={12} className="text-amber-400 shrink-0" />
+              <span className="text-[11px] text-slate-400 flex-1">הפעל התרעות מקומיות לאזורך</span>
+              <button onClick={() => { handleLocalAlertToggle(true); dismissNotifHint() }} className="text-[11px] font-semibold text-amber-400 hover:text-amber-300">הפעל</button>
+              <button onClick={dismissNotifHint} className="text-slate-500 hover:text-slate-300 p-0.5"><X size={10} /></button>
+            </div>
+          )}
+        </div>
+        )
+      })()}
+    </>
+  )
+
   const renderSidebarContent = () => {
     if (mode === 'live') {
-      return <LivePanel currentAlerts={visibleAlerts} lastRefresh={lastRefresh} loading={loading} onAreaClick={setFlyToArea} catColors={catColors} demoMode={demoMode} />
+      return <LivePanel currentAlerts={visibleAlerts} lastRefresh={lastRefresh} loading={loading} onAreaClick={handleAreaClick} catColors={catColors} demoMode={demoMode} />
     }
     switch (sidebarTab) {
-      case 'stats':   return <StatsPanel heatmapData={filteredHeatmap} loading={loading} filters={filters} onAreaClick={setFlyToArea} historyView={historyView} onHistoryViewChange={setHistoryView} realizationData={realizationData} computeRealization={computeRealization} realizationProgress={realizationProgress} catColors={catColors} peakHoursData={peakHoursData} durationData={durationData} simultaneousData={simultaneousData} sequenceData={sequenceData} />
-      case 'events':  return <EventsLog events={filteredEvents} loading={loading} onAreaClick={setFlyToArea} filterAreas={filters.areas} catColors={catColors} />
+      case 'stats':   return <StatsPanel heatmapData={filteredHeatmap} loading={loading} filters={filters} onAreaClick={handleAreaClick} historyView={historyView} onHistoryViewChange={handleHistoryViewChange} realizationData={realizationData} computeRealization={computeRealization} realizationProgress={realizationProgress} catColors={catColors} peakHoursData={peakHoursData} durationData={durationData} simultaneousData={simultaneousData} sequenceData={sequenceData} />
+      case 'events':  return <EventsLog events={filteredEvents} loading={loading} onAreaClick={handleAreaClick} filterAreas={filters.areas} catColors={catColors} />
       case 'filters': return <FilterPanel {...filters} allAreas={allAreas} onChange={handleFilterChange} catColors={catColors} />
       default:        return null
     }
@@ -625,6 +754,13 @@ function AppInner() {
               {lastRefresh ? `עודכן ${formatTime(lastRefresh)}` : 'לא עודכן עדיין'}
             </p>
           </div>
+          <button
+            onClick={handleShare}
+            className="p-2 rounded-xl bg-slate-700 hover:bg-slate-600 transition-colors touch-manipulation relative"
+            title={copied ? 'הקישור הועתק!' : 'שתף'}
+          >
+            <Share2 size={16} className={copied ? 'text-green-400' : 'text-slate-300'} />
+          </button>
           <button
             onClick={() => setSettingsOpen(true)}
             className="p-2 rounded-xl bg-slate-700 hover:bg-slate-600 transition-colors touch-manipulation"
@@ -673,7 +809,10 @@ function AppInner() {
           </div>
         )}
 
-        <div style={{flex:'1 1 0',minHeight:0,overflowY:'auto'}}>{renderSidebarContent()}</div>
+        <div style={{flex:'1 1 0',minHeight:0,overflowY:'auto'}}>
+          {renderPromoBanners()}
+          {renderSidebarContent()}
+        </div>
 
         {mode === 'history' && hasCustomFilters && (
           <div className="mx-4 mb-4 px-3 py-2 bg-blue-900/30 border border-blue-700
@@ -754,6 +893,14 @@ function AppInner() {
                     : lastRefresh ? `עודכן ${formatTime(lastRefresh)}` : 'מפת התרעות ישראל'}
               </span>
             </div>
+            <button
+              onClick={handleShare}
+              className="w-10 h-10 rounded-full bg-slate-800 shadow-lg flex items-center
+                         justify-center border border-slate-700 touch-manipulation shrink-0"
+              title={copied ? 'הועתק!' : 'שתף'}
+            >
+              <Share2 size={16} className={copied ? 'text-green-400' : 'text-slate-300'} />
+            </button>
             <button
               onClick={() => setSettingsOpen(true)}
               className="w-10 h-10 rounded-full bg-slate-800 shadow-lg flex items-center
@@ -878,12 +1025,13 @@ function AppInner() {
           bottomSheetTab === 'filters' ? 'סינון' : ''
         }
       >
+        {renderPromoBanners()}
         {bottomSheetTab === 'live'
-          ? <LivePanel currentAlerts={visibleAlerts} lastRefresh={lastRefresh} loading={loading} onAreaClick={setFlyToArea} catColors={catColors} demoMode={demoMode} />
+          ? <LivePanel currentAlerts={visibleAlerts} lastRefresh={lastRefresh} loading={loading} onAreaClick={handleAreaClick} catColors={catColors} demoMode={demoMode} />
           : bottomSheetTab === 'stats'
-            ? <StatsPanel heatmapData={filteredHeatmap} loading={loading} filters={filters} onAreaClick={setFlyToArea} historyView={historyView} onHistoryViewChange={setHistoryView} realizationData={realizationData} computeRealization={computeRealization} realizationProgress={realizationProgress} catColors={catColors} peakHoursData={peakHoursData} durationData={durationData} simultaneousData={simultaneousData} sequenceData={sequenceData} />
+            ? <StatsPanel heatmapData={filteredHeatmap} loading={loading} filters={filters} onAreaClick={handleAreaClick} historyView={historyView} onHistoryViewChange={handleHistoryViewChange} realizationData={realizationData} computeRealization={computeRealization} realizationProgress={realizationProgress} catColors={catColors} peakHoursData={peakHoursData} durationData={durationData} simultaneousData={simultaneousData} sequenceData={sequenceData} />
             : bottomSheetTab === 'events'
-              ? <EventsLog events={filteredEvents} loading={loading} onAreaClick={setFlyToArea} filterAreas={filters.areas} catColors={catColors} />
+              ? <EventsLog events={filteredEvents} loading={loading} onAreaClick={handleAreaClick} filterAreas={filters.areas} catColors={catColors} />
               : <FilterPanel {...filters} allAreas={allAreas} onChange={handleFilterChange} catColors={catColors} />
         }
       </BottomSheet>

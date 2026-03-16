@@ -49,7 +49,9 @@ let _saveTimer = null
 function saveHistory() {
   clearTimeout(_saveTimer)
   _saveTimer = setTimeout(() => {
-    const sorted = [...alertHistory].sort((a, b) => (a.startedAt || '').localeCompare(b.startedAt || ''))
+    const sorted = [...alertHistory]
+      .sort((a, b) => (a.startedAt || '').localeCompare(b.startedAt || ''))
+      .map(({ _lastUpdate, ...rest }) => rest)
     writeFile(HISTORY_FILE, JSON.stringify(sorted), 'utf8', err => {
       if (err) console.error('[history] save failed:', err.message)
       else console.log(`[history] saved ${alertHistory.length} events to disk`)
@@ -92,6 +94,97 @@ function appendRawEvent(source, data) {
   while (rawEventLog.length > 0 && rawEventLog[0].receivedAt < cutoff) rawEventLog.shift()
   saveRawLog()
 }
+
+// ── Rebuild history from raw event log ────────────────────────────────────
+// Repairs incorrectly-merged history entries using the raw event log
+// (which preserves every individual WebSocket message).
+function rebuildHistoryFromRawLog() {
+  if (rawEventLog.length === 0) return
+  const MERGE_MS = 4 * 60 * 1000
+
+  // Find the time range covered by the raw log
+  const earliest = rawEventLog.reduce((min, e) => e.receivedAt < min ? e.receivedAt : min, rawEventLog[0].receivedAt)
+
+  // Remove history entries that overlap with the raw log period
+  const oldCount = alertHistory.length
+  const kept = alertHistory.filter(e => e.startedAt < earliest)
+  alertHistory.length = 0
+  alertHistory.push(...kept)
+
+  // Rebuild from raw events
+  const rawAlerts = rawEventLog
+    .filter(e => e.data?.type && e.data.type !== 'endAlert')
+    .sort((a, b) => (a.receivedAt || '').localeCompare(b.receivedAt || ''))
+
+  const rawEnds = rawEventLog
+    .filter(e => e.data?.type === 'endAlert')
+    .sort((a, b) => (a.receivedAt || '').localeCompare(b.receivedAt || ''))
+
+  // Group alerts by type, then merge with 4-min window
+  const byType = {}
+  for (const ev of rawAlerts) {
+    const t = ev.data.type
+    if (!byType[t]) byType[t] = []
+    byType[t].push(ev)
+  }
+
+  const rebuilt = []
+  for (const [type, events] of Object.entries(byType)) {
+    let group = null
+    for (const ev of events) {
+      const ts = ev.receivedAt
+      const tsMs = new Date(ts).getTime()
+      const cities = Array.isArray(ev.data.cities) ? ev.data.cities.filter(Boolean) : []
+
+      if (!group || tsMs - new Date(group._lastTs).getTime() >= MERGE_MS) {
+        if (group) rebuilt.push(group)
+        group = { type, title: ev.data.title || '', cities: [...cities], startedAt: ts, endedAt: null, _lastTs: ts }
+      } else {
+        for (const city of cities)
+          if (!group.cities.includes(city)) group.cities.push(city)
+        group._lastTs = ts
+      }
+    }
+    if (group) rebuilt.push(group)
+  }
+
+  // Apply endAlert events to close matching entries
+  for (const ev of rawEnds) {
+    const endTime = ev.receivedAt
+    // endAlert with type 'endAlert' is generic — close all open entries at that time
+    const endTypes = (ev.source === 'endAlert')
+      ? rebuilt.filter(e => !e.endedAt).map(e => e.type)
+      : [ev.data.type]
+    for (const t of endTypes) {
+      // Find the most recent open entry of this type that started before this end
+      for (let i = rebuilt.length - 1; i >= 0; i--) {
+        if (rebuilt[i].type === t && !rebuilt[i].endedAt && rebuilt[i].startedAt <= endTime) {
+          rebuilt[i].endedAt = endTime
+          break
+        }
+      }
+    }
+  }
+
+  // Clean up internal fields and add to history
+  for (const e of rebuilt) {
+    delete e._lastTs
+    alertHistory.push(e)
+  }
+
+  // Restore activeAlerts from any unclosed entries
+  activeAlerts.clear()
+  for (const e of alertHistory) {
+    if (!e.endedAt) {
+      activeAlerts.set(e.type, { type: e.type, title: e.title, cities: [...e.cities], startedAt: e.startedAt, _lastUpdate: e.startedAt })
+    }
+  }
+
+  console.log(`[rebuild] replaced ${oldCount - kept.length} entries with ${rebuilt.length} from raw log (${rawEventLog.length} raw events, earliest ${earliest})`)
+  saveHistory()
+}
+
+rebuildHistoryFromRawLog()
 
 // ── Connection state tracking ─────────────────────────────────────────────
 
@@ -154,6 +247,8 @@ socket.io.on('reconnect_attempt', (attempt) => {
   connState.reconnectAttempts = attempt
 })
 
+const MERGE_WINDOW_MS = 4 * 60 * 1000  // 4 minutes — same as frontend merge
+
 socket.on('alert', (alerts) => {
   const list = Array.isArray(alerts) ? alerts : [alerts]
   for (const a of list) appendRawEvent('alert', a)
@@ -161,25 +256,37 @@ socket.on('alert', (alerts) => {
     if (!a?.type) continue
     if (a.type === 'endAlert') continue  // end signal — handled by the endAlert event
     const cities = Array.isArray(a.cities) ? a.cities.filter(Boolean) : []
+    const now = new Date().toISOString()
+    const nowMs = Date.now()
     const existing = activeAlerts.get(a.type)
+
     if (existing) {
-      // Alert type already active — merge any new cities, keep original startedAt
-      for (const city of cities) {
-        if (!existing.cities.includes(city)) existing.cities.push(city)
-      }
-      // Also merge into the open history entry
-      const histEntry = alertHistory.findLast(e => e.type === a.type && !e.endedAt)
-      if (histEntry) {
-        for (const city of cities)
-          if (!histEntry.cities.includes(city)) histEntry.cities.push(city)
+      const lastUpdate = existing._lastUpdate || existing.startedAt
+      const gap = nowMs - new Date(lastUpdate).getTime()
+
+      if (gap <= MERGE_WINDOW_MS) {
+        // Within merge window — merge cities into existing entry
+        for (const city of cities) {
+          if (!existing.cities.includes(city)) existing.cities.push(city)
+        }
+        existing._lastUpdate = now
+        const histEntry = alertHistory.findLast(e => e.type === a.type && !e.endedAt)
+        if (histEntry) {
+          for (const city of cities)
+            if (!histEntry.cities.includes(city)) histEntry.cities.push(city)
+        }
+      } else {
+        // Gap > 4 min — close old entry, start new one
+        const histEntry = alertHistory.findLast(e => e.type === a.type && !e.endedAt)
+        if (histEntry) histEntry.endedAt = existing._lastUpdate || now
+        activeAlerts.set(a.type, {
+          type: a.type, title: a.title || '', cities, startedAt: now, _lastUpdate: now,
+        })
+        alertHistory.push({ type: a.type, title: a.title || '', cities: [...cities], startedAt: now, endedAt: null })
       }
     } else {
-      const now = new Date().toISOString()
       activeAlerts.set(a.type, {
-        type:      a.type,
-        title:     a.title || '',
-        cities,
-        startedAt: now,
+        type: a.type, title: a.title || '', cities, startedAt: now, _lastUpdate: now,
       })
       alertHistory.push({ type: a.type, title: a.title || '', cities: [...cities], startedAt: now, endedAt: null })
     }
@@ -776,6 +883,16 @@ app.get('/history', (req, res) => {
   .search-active { font-size: .82rem; color: #60a5fa; margin-bottom: 1rem;
                    padding: .5rem .85rem; background: #1e293b; border: 1px solid #1d4ed8;
                    border-radius: .4rem; display: inline-block }
+
+  .filters { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; align-items: center }
+  .type-btn { background: #1e293b; border: 1px solid #334155; color: #94a3b8; border-radius: .4rem;
+              padding: .35rem .7rem; font-size: .75rem; font-weight: 600; cursor: pointer; transition: all .15s }
+  .type-btn:hover { border-color: #60a5fa; color: #e2e8f0 }
+  .type-btn.active { background: #1d4ed8; border-color: #3b82f6; color: #bfdbfe }
+  .toggle-row { display: flex; gap: .5rem; margin-bottom: 1rem; align-items: center }
+  .toggle-btn { background: #1e293b; border: 1px solid #334155; color: #94a3b8; border-radius: .4rem;
+                padding: .35rem .7rem; font-size: .75rem; font-weight: 600; cursor: pointer; transition: all .15s }
+  .toggle-btn:hover { border-color: #60a5fa; color: #e2e8f0 }
 </style>
 </head>
 <body>
@@ -791,6 +908,23 @@ app.get('/history', (req, res) => {
   <button id="btn-clear-search" class="btn-clear" onclick="clearSearch()" style="display:none">Clear</button>
 </div>
 <div id="search-info" style="display:none"></div>
+
+<div class="filters">
+  <button class="type-btn active" data-type="all" onclick="toggleType('all')">All</button>
+  <button class="type-btn" data-type="missiles" onclick="toggleType('missiles')">🚀 Missiles</button>
+  <button class="type-btn" data-type="hostileAircraftIntrusion" onclick="toggleType('hostileAircraftIntrusion')">✈️ Aircraft</button>
+  <button class="type-btn" data-type="terroristInfiltration" onclick="toggleType('terroristInfiltration')">🔫 Infiltration</button>
+  <button class="type-btn" data-type="earthQuake" onclick="toggleType('earthQuake')">🌍 Earthquake</button>
+  <button class="type-btn" data-type="newsFlash" onclick="toggleType('newsFlash')">📢 News Flash</button>
+  <button class="type-btn" data-type="radiologicalEvent" onclick="toggleType('radiologicalEvent')">☢️ Radiological</button>
+  <button class="type-btn" data-type="tsunami" onclick="toggleType('tsunami')">🌊 Tsunami</button>
+  <button class="type-btn" data-type="hazardousMaterials" onclick="toggleType('hazardousMaterials')">☣️ Hazmat</button>
+</div>
+
+<div class="toggle-row">
+  <button class="toggle-btn" onclick="expandAll()">▼ Expand all</button>
+  <button class="toggle-btn" onclick="collapseAll()">▶ Collapse all</button>
+</div>
 
 <table>
   <thead>
@@ -821,6 +955,32 @@ app.get('/history', (req, res) => {
 
   let offset = 0
   let searchTerm = ''
+  let activeTypes = new Set(['all'])
+
+  function toggleType(type) {
+    if (type === 'all') {
+      activeTypes = new Set(['all'])
+    } else {
+      activeTypes.delete('all')
+      if (activeTypes.has(type)) activeTypes.delete(type)
+      else activeTypes.add(type)
+      if (activeTypes.size === 0) activeTypes.add('all')
+    }
+    document.querySelectorAll('.type-btn').forEach(b => {
+      b.classList.toggle('active', activeTypes.has(b.dataset.type))
+    })
+    // Reset and reload with new filter
+    offset = 0
+    document.getElementById('tbody').innerHTML = ''
+    loadMore()
+  }
+
+  function expandAll() {
+    document.querySelectorAll('.td-cities details').forEach(d => d.open = true)
+  }
+  function collapseAll() {
+    document.querySelectorAll('.td-cities details').forEach(d => d.open = false)
+  }
 
   function doSearch() {
     const val = document.getElementById('search-input').value.trim()
@@ -921,8 +1081,9 @@ app.get('/history', (req, res) => {
       tbody.appendChild(row)
     }
     const td = row.querySelector('td')
-    if (searchTerm) {
-      // In search mode we don't know total — show "load more" if last batch was full
+    const filtered = searchTerm || !activeTypes.has('all')
+    if (filtered) {
+      // In filtered mode we don't know total — show "load more" if last batch was full
       if (batchSize < PAGE) {
         td.innerHTML = \`<span style="color:#475569;font-size:.8rem">\${offset} matching events shown</span>\`
       } else {
@@ -946,6 +1107,7 @@ app.get('/history', (req, res) => {
     try {
       let url = \`/history.json?offset=\${offset}&limit=\${PAGE}\`
       if (searchTerm) url += \`&search=\${encodeURIComponent(searchTerm)}\`
+      if (!activeTypes.has('all')) url += \`&type=\${[...activeTypes].join(',')}\`
       const res  = await fetch(url)
       const data = await res.json()
       renderRows(data)
@@ -1294,6 +1456,11 @@ app.get('/demo', (req, res) => {
 // History as JSON — sorted newest first, supports ?offset=N&limit=N&search=TERM for pagination + area search
 app.get('/history.json', (req, res) => {
   let all = [...alertHistory].sort((a, b) => (b.startedAt || '').localeCompare(a.startedAt || ''))
+  const typeFilter = (req.query.type || '').trim()
+  if (typeFilter) {
+    const types = typeFilter.split(',').map(s => s.trim()).filter(Boolean)
+    if (types.length) all = all.filter(e => types.includes(e.type))
+  }
   const search = (req.query.search || '').trim()
   if (search) {
     all = all.filter(e => Array.isArray(e.cities) && e.cities.some(c => c.includes(search)))
