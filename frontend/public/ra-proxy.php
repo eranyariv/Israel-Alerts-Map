@@ -1,5 +1,5 @@
 <?php
-$APIKEY  = 'pr_MOWrCRNqKRojDStFFrUMPfHtOChYhoQkgDiwMnnJqEtwOLCJXBbMlBimmENyjjmf';
+$APIKEY  = getenv('RA_HTTP_KEY') ?: '';
 $RA_BASE = 'https://redalert.orielhaim.com';
 
 header('Content-Type: application/json; charset=utf-8');

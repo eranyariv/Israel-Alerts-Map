@@ -1,12 +1,13 @@
 properties:
   configuration:
     secrets:
+      # Secret values managed via Azure CLI: az containerapp secret set
       - name: ra-apikey
-        value: "pb_XaEtDkpqrpYNEwQkIWxGmwohEBhhiuNCSKxpjwFHpFKGMOaidXcEDdjVyJBUajWF"
+        value: "REDACTED — set via az containerapp secret set"
       - name: ra-http-key
-        value: "pr_MOWrCRNqKRojDStFFrUMPfHtOChYhoQkgDiwMnnJqEtwOLCJXBbMlBimmENyjjmf"
+        value: "REDACTED — set via az containerapp secret set"
       - name: gemini-api-key
-        value: "AIzaSyB0bqcvJBSMUCHp9H7T57LjQ3yw5Njj_K4"
+        value: "REDACTED — set via az containerapp secret set"
   template:
     revisionSuffix: v1-21
     containers:
