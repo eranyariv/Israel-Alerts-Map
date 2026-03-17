@@ -1,12 +1,14 @@
 import express from 'express'
 import { io } from 'socket.io-client'
 import { readFileSync, writeFile } from 'fs'
+import { GoogleGenerativeAI } from '@google/generative-ai'
 
 const { version: VERSION } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
 
 const RA_URL        = 'https://redalert.orielhaim.com'
 const RA_APIKEY     = process.env.RA_APIKEY      // public key — used for socket /client connection
 const RA_HTTP_KEY   = process.env.RA_HTTP_KEY    // private key — used for REST API (history)
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY // Gemini Flash free tier
 const PORT          = process.env.PORT ?? 8080
 
 if (!RA_APIKEY) {
@@ -15,6 +17,283 @@ if (!RA_APIKEY) {
 }
 if (!RA_HTTP_KEY) {
   console.warn('[relay] RA_HTTP_KEY not set — history API calls will fail')
+}
+if (!GEMINI_API_KEY) {
+  console.warn('[relay] GEMINI_API_KEY not set — summary LLM calls will use fallback')
+}
+
+// ── Gemini Flash LLM ──────────────────────────────────────────────────────
+const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null
+const geminiModel = genAI?.getGenerativeModel({ model: 'gemini-2.5-flash' })
+
+// ── City → Zone mapping from RedAlert cities API ──────────────────────────
+const cityToZone = new Map()
+
+async function loadCityZoneMapping() {
+  try {
+    let offset = 0
+    const limit = 500
+    let total = Infinity
+    while (offset < total) {
+      const url = `${RA_URL}/api/data/cities?limit=${limit}&offset=${offset}&include=coords`
+      const resp = await fetch(url)
+      if (!resp.ok) { console.warn(`[cities] fetch failed: ${resp.status}`); break }
+      const json = await resp.json()
+      const cities = json.data || []
+      for (const c of cities) {
+        if (c.name && c.zone) cityToZone.set(c.name, c.zone)
+      }
+      total = json.pagination?.total ?? cities.length
+      offset += cities.length
+      if (cities.length === 0) break
+    }
+    console.log(`[cities] loaded ${cityToZone.size} city→zone mappings`)
+  } catch (e) {
+    console.error('[cities] failed to load city→zone mapping:', e.message)
+  }
+}
+
+// Load on startup and refresh every 6 hours
+loadCityZoneMapping()
+setInterval(loadCityZoneMapping, 6 * 60 * 60 * 1000)
+
+// ── Summary helpers ──────────────────────────────────────────────────────
+
+const TYPE_LABELS_HE = {
+  missiles:                 'טילים',
+  hostileAircraftIntrusion: 'חדירת כלי טיס עוין',
+  terroristInfiltration:    'חדירת מחבלים',
+  radiologicalEvent:        'אירוע רדיולוגי',
+  earthQuake:               'רעידת אדמה',
+  tsunami:                  'צונאמי',
+  hazardousMaterials:       'חומרים מסוכנים',
+}
+
+/** Get Israel↔UTC offset in milliseconds (positive = Israel ahead of UTC) */
+function getILOffsetMs() {
+  const now = new Date()
+  const utc = new Date(now.toLocaleString('en-US', { timeZone: 'UTC' }))
+  const il  = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jerusalem' }))
+  return il.getTime() - utc.getTime()
+}
+
+/** Get current cycle info: { cycle, title, start, end, cacheKey } */
+function getCurrentCycle() {
+  const now = new Date()
+  const offsetMs = getILOffsetMs()
+
+  // Compute "Israel now" — a Date whose UTC methods give Israel local values
+  const ilNow = new Date(now.getTime() + offsetMs)
+  const ilHour = ilNow.getUTCHours()
+  const ilDateStr = ilNow.toISOString().slice(0, 10) // YYYY-MM-DD in IL time
+
+  if (ilHour >= 6 && ilHour < 18) {
+    // Between 06:00-18:00 IL → show NIGHT summary (previous 18:00 IL → 06:00 IL today)
+    const nightEndUTC = new Date(`${ilDateStr}T06:00:00.000Z`)
+    nightEndUTC.setTime(nightEndUTC.getTime() - offsetMs)
+    const yesterday = new Date(ilNow.getTime() - 86400000)
+    const yesterdayStr = yesterday.toISOString().slice(0, 10)
+    const nightStartUTC = new Date(`${yesterdayStr}T18:00:00.000Z`)
+    nightStartUTC.setTime(nightStartUTC.getTime() - offsetMs)
+    return {
+      cycle: 'night',
+      title: 'סיכום הלילה',
+      start: nightStartUTC,
+      end: nightEndUTC,
+      cacheKey: `night-${ilDateStr}`,
+    }
+  } else {
+    // Between 18:00-05:59 IL → show DAY summary (06:00-18:00 IL)
+    const dayRef = ilHour < 6 ? new Date(ilNow.getTime() - 86400000) : ilNow
+    const dayRefStr = dayRef.toISOString().slice(0, 10)
+    const dayStartUTC = new Date(`${dayRefStr}T06:00:00.000Z`)
+    dayStartUTC.setTime(dayStartUTC.getTime() - offsetMs)
+    const dayEndUTC = new Date(`${dayRefStr}T18:00:00.000Z`)
+    dayEndUTC.setTime(dayEndUTC.getTime() - offsetMs)
+    return {
+      cycle: 'day',
+      title: 'סיכום היום',
+      start: dayStartUTC,
+      end: dayEndUTC,
+      cacheKey: `day-${dayRefStr}`,
+    }
+  }
+}
+
+/** Convert a Date to Israel-time HH:MM string */
+function toILTime(date) {
+  return date.toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
+/** Filter alertHistory to a time window and aggregate by zone */
+function aggregateAlertsByZone(start, end) {
+  const startISO = start.toISOString()
+  const endISO = end.toISOString()
+
+  const events = alertHistory.filter(e => {
+    if (e.type === 'newsFlash') return false // newsFlash is pre-warning, not standalone
+    return e.startedAt >= startISO && e.startedAt < endISO
+  })
+
+  // Aggregate: zone → { type → [{ time, cities }] }
+  const byZone = {}
+  let totalAlerts = 0
+
+  for (const ev of events) {
+    totalAlerts++
+    const zones = new Set()
+    for (const city of (ev.cities || [])) {
+      const zone = cityToZone.get(city)
+      if (zone) zones.add(zone)
+    }
+    if (zones.size === 0) zones.add('אזור לא מזוהה')
+
+    for (const zone of zones) {
+      if (!byZone[zone]) byZone[zone] = {}
+      if (!byZone[zone][ev.type]) byZone[zone][ev.type] = []
+      byZone[zone][ev.type].push({
+        time: toILTime(new Date(ev.startedAt)),
+        cityCount: ev.cities?.length ?? 0,
+      })
+    }
+  }
+
+  return { byZone, totalAlerts, eventCount: events.length, events }
+}
+
+/** Build personalized bullet for user's specific area (not zone) */
+function buildPersonalBullet(events, userArea, cycle) {
+  if (!userArea) {
+    return 'המיקום שלך אינו זמין — לא ניתן להציג סיכום מותאם אישית לאזורך.'
+  }
+
+  // Filter to alerts that specifically include the user's area in their cities list
+  const areaAlerts = events.filter(e =>
+    (e.cities || []).includes(userArea)
+  )
+
+  const period = cycle === 'night' ? 'הלילה' : 'היום'
+
+  if (areaAlerts.length === 0) {
+    return `${period} לא היו אזעקות באזורך (${userArea}).`
+  }
+
+  // Group by type
+  const byType = {}
+  for (const ev of areaAlerts) {
+    if (!byType[ev.type]) byType[ev.type] = []
+    byType[ev.type].push(toILTime(new Date(ev.startedAt)))
+  }
+
+  const parts = []
+  for (const [type, times] of Object.entries(byType)) {
+    const label = TYPE_LABELS_HE[type] || type
+    const count = times.length
+    if (count === 1) {
+      parts.push(`אזעקת ${label} אחת בשעה ${times[0]}`)
+    } else if (count === 2) {
+      parts.push(`${count} אזעקות ${label} בשעה ${times[0]} ובשעה ${times[1]}`)
+    } else {
+      const lastTime = times[times.length - 1]
+      const firstTimes = times.slice(0, -1).join(', ')
+      parts.push(`${count} אזעקות ${label} (${firstTimes} ו-${lastTime})`)
+    }
+  }
+
+  return `${period} היו באזורך (${userArea}) ${parts.join(', ו')}.`
+}
+
+/** Generate country-wide summary bullets via Gemini Flash */
+const summaryCache = new Map() // cacheKey → { bullets, generatedAt }
+
+async function generateCountryBullets(byZone, totalAlerts, cycleInfo, force = false) {
+  const cached = summaryCache.get(cycleInfo.cacheKey)
+  if (cached && !force) return cached.bullets
+
+  // Build structured data for the LLM
+  const zonesSorted = Object.entries(byZone)
+    .map(([zone, types]) => {
+      const total = Object.values(types).reduce((sum, arr) => sum + arr.length, 0)
+      return { zone, types, total }
+    })
+    .sort((a, b) => b.total - a.total)
+
+  const zoneSummaries = zonesSorted.slice(0, 15).map(({ zone, types, total }) => {
+    const typeDetails = Object.entries(types).map(([t, alerts]) => {
+      const label = TYPE_LABELS_HE[t] || t
+      const times = alerts.map(a => a.time).join(', ')
+      return `${label}: ${alerts.length} (${times})`
+    }).join('; ')
+    return `${zone}: סה"כ ${total} — ${typeDetails}`
+  }).join('\n')
+
+  const period = cycleInfo.cycle === 'night' ? 'הלילה (18:00-06:00)' : 'היום (06:00-18:00)'
+  const prompt = `אתה כתב חדשות ביטחוני ישראלי. כתוב סיכום קצר של אירועי ההתרעה שהתקבלו ${period}.
+
+נתוני התרעות לפי אזור:
+${zoneSummaries}
+
+סה"כ: ${totalAlerts} התרעות ב-${zonesSorted.length} אזורים.
+
+כתוב 7-8 נקודות תמציתיות בעברית בסגנון עדכון חדשותי (לא יבש, אבל מקצועי):
+- התמקד ברמת אזורים (zones), לא בשמות ישובים בודדים
+- ציין מספרים, שעות שיא, וסוגי התרעות
+- אם יש דפוסים מעניינים (אזור שנפגע חזק, שעות מרוכזות, סוג חריג) — ציין
+- אם היה שקט יחסית — ציין גם את זה
+- כל נקודה בשורה נפרדת שמתחילה ב-•
+- ללא כותרת, רק הנקודות עצמן`
+
+  if (geminiModel) {
+    try {
+      const result = await geminiModel.generateContent(prompt)
+      const text = result.response.text().trim()
+      const bullets = text.split('\n').filter(l => l.trim().startsWith('•')).map(l => l.trim())
+      if (bullets.length >= 2) {
+        summaryCache.set(cycleInfo.cacheKey, { bullets, generatedAt: new Date().toISOString() })
+        console.log(`[summary] LLM generated ${bullets.length} bullets for ${cycleInfo.cacheKey}`)
+        return bullets
+      }
+    } catch (e) {
+      console.error('[summary] Gemini call failed:', e.message)
+    }
+  }
+
+  // Fallback — simple count-based summary
+  return generateFallbackBullets(byZone, zonesSorted, totalAlerts, cycleInfo)
+}
+
+function generateFallbackBullets(byZone, zonesSorted, totalAlerts, cycleInfo) {
+  const period = cycleInfo.cycle === 'night' ? 'הלילה' : 'היום'
+  const bullets = []
+
+  // Total overview
+  bullets.push(`• ${period} התקבלו ${totalAlerts} התרעות ב-${zonesSorted.length} אזורים ברחבי הארץ.`)
+
+  // Most active zones
+  const top3 = zonesSorted.slice(0, 3)
+  if (top3.length > 0) {
+    const topStr = top3.map(z => `${z.zone} (${z.total})`).join(', ')
+    bullets.push(`• האזורים הפעילים ביותר: ${topStr}.`)
+  }
+
+  // Type breakdown
+  const typeTotals = {}
+  for (const { types } of zonesSorted) {
+    for (const [t, alerts] of Object.entries(types)) {
+      typeTotals[t] = (typeTotals[t] || 0) + alerts.length
+    }
+  }
+  const typeStr = Object.entries(typeTotals)
+    .sort((a, b) => b[1] - a[1])
+    .map(([t, count]) => `${TYPE_LABELS_HE[t] || t}: ${count}`)
+    .join(', ')
+  if (typeStr) {
+    bullets.push(`• סוגי ההתרעות: ${typeStr}.`)
+  }
+
+  summaryCache.set(cycleInfo.cacheKey, { bullets, generatedAt: new Date().toISOString() })
+  console.log(`[summary] fallback generated ${bullets.length} bullets for ${cycleInfo.cacheKey}`)
+  return bullets
 }
 
 // Map of type → { type, title, cities, startedAt }
@@ -741,6 +1020,55 @@ app.get('/api/history', (req, res) => {
 
   console.log(`[api/history] returning ${data.length} items`)
   res.json({ data, total: data.length })
+})
+
+// Summary endpoint — returns bulletin-style Hebrew summary of recent alerts
+// Query params: area (optional — user's geojson area name, resolved to RedAlert zone)
+app.get('/api/summary', async (req, res) => {
+  const userArea = (req.query.area || req.query.zone || '').trim() || null
+  const force = req.query.force === '1'
+  // Resolve geojson area name → RedAlert zone via cityToZone mapping
+  const userZone = userArea ? (cityToZone.get(userArea) || userArea) : null
+
+  try {
+    const cycleInfo = getCurrentCycle()
+    const { byZone, totalAlerts, events } = aggregateAlertsByZone(cycleInfo.start, cycleInfo.end)
+    const hasEvents = totalAlerts > 0
+
+    let personalBullet = null
+    let bullets = []
+
+    if (hasEvents) {
+      personalBullet = buildPersonalBullet(events, userArea, cycleInfo.cycle)
+      bullets = await generateCountryBullets(byZone, totalAlerts, cycleInfo, force)
+    }
+
+    console.log(`[summary] zone=${userZone ?? 'none'} cycle=${cycleInfo.cacheKey} events=${totalAlerts} bullets=${bullets.length}`)
+
+    // Format date range for display, e.g. "17.03 06:00 – 18:00"
+    const fmtIL = (d, opts) => d.toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', ...opts })
+    const startDay = fmtIL(cycleInfo.start, { day: '2-digit', month: '2-digit' })
+    const startTime = fmtIL(cycleInfo.start, { hour: '2-digit', minute: '2-digit', hour12: false })
+    const endDay = fmtIL(cycleInfo.end, { day: '2-digit', month: '2-digit' })
+    const endTime = fmtIL(cycleInfo.end, { hour: '2-digit', minute: '2-digit', hour12: false })
+    const subtitle = startDay === endDay
+      ? `${startDay}, ${startTime} – ${endTime}`
+      : `${startDay} ${startTime} – ${endDay} ${endTime}`
+
+    res.json({
+      title: cycleInfo.title,
+      subtitle,
+      cycle: cycleInfo.cycle,
+      cacheKey: cycleInfo.cacheKey,
+      hasEvents,
+      personalBullet,
+      bullets,
+      totalAlerts,
+    })
+  } catch (e) {
+    console.error('[summary] error:', e.message)
+    res.status(500).json({ error: e.message })
+  }
 })
 
 // Proxy a single paginated page from the RedAlert history API

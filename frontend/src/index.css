@@ -121,6 +121,24 @@ body {
   color: #e2e8f0;
 }
 
+/* Bell ringing animation for summary bulletin */
+@keyframes bellRing {
+  0%, 100% { transform: rotate(0deg); }
+  10% { transform: rotate(14deg); }
+  20% { transform: rotate(-14deg); }
+  30% { transform: rotate(10deg); }
+  40% { transform: rotate(-10deg); }
+  50% { transform: rotate(6deg); }
+  60% { transform: rotate(-4deg); }
+  70% { transform: rotate(2deg); }
+  80% { transform: rotate(0deg); }
+}
+
+.bell-ringing {
+  animation: bellRing 1.5s ease-in-out infinite;
+  transform-origin: top center;
+}
+
 /* Legend gradient */
 .heatmap-legend {
   background: linear-gradient(to left, #dc2626, #ea580c, #eab308, #84cc16, #16a34a);

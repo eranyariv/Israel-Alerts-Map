@@ -5,8 +5,10 @@ properties:
         value: "pb_XaEtDkpqrpYNEwQkIWxGmwohEBhhiuNCSKxpjwFHpFKGMOaidXcEDdjVyJBUajWF"
       - name: ra-http-key
         value: "pr_MOWrCRNqKRojDStFFrUMPfHtOChYhoQkgDiwMnnJqEtwOLCJXBbMlBimmENyjjmf"
+      - name: gemini-api-key
+        value: "AIzaSyB0bqcvJBSMUCHp9H7T57LjQ3yw5Njj_K4"
   template:
-    revisionSuffix: v1-20
+    revisionSuffix: v1-21
     containers:
       - name: redalert-relay
         image: redalertrelay.azurecr.io/redalert-relay:latest
@@ -18,6 +20,8 @@ properties:
             secretRef: ra-apikey
           - name: RA_HTTP_KEY
             secretRef: ra-http-key
+          - name: GEMINI_API_KEY
+            secretRef: gemini-api-key
         volumeMounts:
           - volumeName: relay-data
             mountPath: /data

@@ -12,6 +12,7 @@ import AlertBanner from './components/AlertBanner'
 import BottomSheet from './components/BottomSheet'
 import DebugPanel from './components/DebugPanel'
 import SettingsPanel from './components/SettingsPanel'
+import SummaryBulletin from './components/SummaryBulletin'
 import { useAlerts, buildHeatmap } from './hooks/useAlerts'
 import { computePeakHours, computeDuration, computeSimultaneous, computeSequences } from './utils/analytics'
 import { VERSION } from './version'
@@ -279,6 +280,9 @@ function AppInner() {
   const [notifHintDismissed, setNotifHintDismissed] = useState(() => localStorage.getItem('notifHintDismissed') === 'true')
   const [copied, setCopied] = useState(false)
   const autoZoomRef = useRef(!localStorage.getItem('firstVisitZoomed'))
+  const [summaryData, setSummaryData] = useState(null)
+  const [summaryOpen, setSummaryOpen] = useState(false)
+  const [summaryRead, setSummaryRead] = useState(false)
 
   const demoZone = useMemo(() => {
     if (!demoMode || !userLocation || !zonesGeoJson) return null
@@ -372,6 +376,43 @@ function AppInner() {
       autoZoomRef.current = false
     }
   }, [userZone])
+
+  // ── Summary bulletin fetch ──────────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false
+    async function fetchSummary() {
+      try {
+        const zoneParam = userZone ? `?area=${encodeURIComponent(userZone)}` : ''
+        const resp = await fetch(`${RELAY_URL}/api/summary${zoneParam}`)
+        if (!resp.ok) return
+        const data = await resp.json()
+        if (cancelled) return
+        setSummaryData(data)
+        // Check if user already read this cycle's summary
+        const readKey = localStorage.getItem('summaryReadKey')
+        setSummaryRead(readKey === data.cacheKey)
+      } catch {}
+    }
+    fetchSummary()
+    // Refresh every 10 minutes (in case cycle changes)
+    const interval = setInterval(fetchSummary, 10 * 60 * 1000)
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [userZone])
+
+  const handleSummaryOpen = useCallback(() => {
+    setSummaryOpen(true)
+    setSummaryRead(true)
+    if (summaryData?.cacheKey) {
+      localStorage.setItem('summaryReadKey', summaryData.cacheKey)
+    }
+    trackEvent('summary_open', { cycle: summaryData?.cycle })
+  }, [summaryData])
+
+  const handleSummaryClose = useCallback(() => {
+    setSummaryOpen(false)
+  }, [])
+
+  const summaryBellAnimating = summaryData?.hasEvents && !summaryRead
 
   // Share handler
   const handleShare = useCallback(async () => {
@@ -762,6 +803,16 @@ function AppInner() {
             <Share2 size={16} className={copied ? 'text-green-400' : 'text-slate-300'} />
           </button>
           <button
+            onClick={handleSummaryOpen}
+            className="p-2 rounded-xl bg-slate-700 hover:bg-slate-600 transition-colors touch-manipulation relative"
+            title={summaryData?.title || 'סיכום'}
+          >
+            <Bell size={16} className={`text-slate-300 ${summaryBellAnimating ? 'bell-ringing' : ''}`} />
+            {summaryBellAnimating && (
+              <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-slate-700" />
+            )}
+          </button>
+          <button
             onClick={() => setSettingsOpen(true)}
             className="p-2 rounded-xl bg-slate-700 hover:bg-slate-600 transition-colors touch-manipulation"
             title="הגדרות"
@@ -902,6 +953,17 @@ function AppInner() {
               <Share2 size={16} className={copied ? 'text-green-400' : 'text-slate-300'} />
             </button>
             <button
+              onClick={handleSummaryOpen}
+              className="w-10 h-10 rounded-full bg-slate-800 shadow-lg flex items-center
+                         justify-center border border-slate-700 touch-manipulation shrink-0 relative"
+              title={summaryData?.title || 'סיכום'}
+            >
+              <Bell size={16} className={`text-slate-300 ${summaryBellAnimating ? 'bell-ringing' : ''}`} />
+              {summaryBellAnimating && (
+                <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-slate-800" />
+              )}
+            </button>
+            <button
               onClick={() => setSettingsOpen(true)}
               className="w-10 h-10 rounded-full bg-slate-800 shadow-lg flex items-center
                          justify-center border border-slate-700 touch-manipulation shrink-0"
@@ -995,6 +1057,9 @@ function AppInner() {
       </div>
 
       <DebugPanel shown={debugShown} />
+      {summaryOpen && (
+        <SummaryBulletin data={summaryData} onClose={handleSummaryClose} />
+      )}
       <SettingsPanel
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
