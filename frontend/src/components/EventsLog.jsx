@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Clock, MapPin, ChevronDown, ChevronUp } from 'lucide-react'
+import { useState, useMemo, useRef, useEffect } from 'react'
+import { Clock, MapPin, ChevronDown, ChevronUp, Search, X } from 'lucide-react'
 import { CATEGORY_COLORS, CATEGORY_LABELS } from '../utils/heatmap'
 import { format } from 'date-fns'
 import { he } from 'date-fns/locale'
@@ -40,9 +40,10 @@ function EventRow({ event, onAreaClick, filterAreas, catColors = {} }) {
   const allCities = event.cities ?? []
   const cityCount = allCities.length
 
+  const heb = new Intl.Collator('he')
   const filterSet = filterAreas?.length ? new Set(filterAreas) : null
-  const matched = filterSet ? allCities.filter(c => filterSet.has(c)) : []
-  const rest    = filterSet ? allCities.filter(c => !filterSet.has(c)) : allCities
+  const matched = filterSet ? allCities.filter(c => filterSet.has(c)).sort(heb.compare) : []
+  const rest    = filterSet ? allCities.filter(c => !filterSet.has(c)).sort(heb.compare) : [...allCities].sort(heb.compare)
 
   return (
     <div
@@ -125,7 +126,7 @@ function EventRow({ event, onAreaClick, filterAreas, catColors = {} }) {
                 </button>
                 {expanded && (
                   <div className="flex flex-wrap gap-1">
-                    {allCities.map(city => (
+                    {rest.map(city => (
                       <CityChip key={city} city={city} onAreaClick={onAreaClick} />
                     ))}
                   </div>
@@ -139,7 +140,79 @@ function EventRow({ event, onAreaClick, filterAreas, catColors = {} }) {
   )
 }
 
+function AreaSearch({ allAreas, value, onChange }) {
+  const [open, setOpen] = useState(false)
+  const [input, setInput] = useState('')
+  const ref = useRef(null)
+
+  useEffect(() => {
+    const handler = (e) => { if (!ref.current?.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const suggestions = useMemo(() => {
+    if (!input.trim()) return []
+    return allAreas.filter(a => a.includes(input.trim())).slice(0, 8)
+  }, [input, allAreas])
+
+  const select = (area) => {
+    onChange(area)
+    setInput(area)
+    setOpen(false)
+  }
+
+  const clear = () => {
+    onChange('')
+    setInput('')
+    setOpen(false)
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <div className="flex items-center bg-slate-700/60 rounded-lg border border-slate-600/50 focus-within:border-blue-500/50 transition-colors px-2.5">
+        <Search size={14} className="text-slate-400 ml-2 shrink-0" />
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => { setInput(e.target.value); onChange(''); setOpen(true) }}
+          onFocus={() => input.trim() && setOpen(true)}
+          placeholder="חיפוש אזור..."
+          className="flex-1 bg-transparent text-sm text-white placeholder-slate-500 outline-none py-1.5"
+        />
+        {(input || value) && (
+          <button onClick={clear} className="text-slate-400 hover:text-slate-200 mr-1 shrink-0">
+            <X size={14} />
+          </button>
+        )}
+      </div>
+      {open && suggestions.length > 0 && (
+        <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-slate-800 border border-slate-600/50 rounded-lg shadow-xl max-h-48 overflow-y-auto">
+          {suggestions.map(area => (
+            <button
+              key={area}
+              onClick={() => select(area)}
+              className="w-full text-right text-sm px-3 py-1.5 text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
+            >
+              {area}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function EventsLog({ events, loading, onAreaClick, filterAreas, catColors = {} }) {
+  const [searchArea, setSearchArea] = useState('')
+
+  const allAreas = useMemo(() => {
+    if (!events?.length) return []
+    const set = new Set()
+    for (const e of events) for (const c of (e.cities || [])) set.add(c)
+    return [...set].sort(new Intl.Collator('he').compare)
+  }, [events])
+
   if (loading) {
     return (
       <div className="p-4 space-y-2">
@@ -164,13 +237,22 @@ export default function EventsLog({ events, loading, onAreaClick, filterAreas, c
     (b.savedAt || '').localeCompare(a.savedAt || '')
   )
 
-  const activeCount = sorted.filter(e => !e.endedAt).length
+  // Filter by searched area
+  const filtered = searchArea
+    ? sorted.filter(e => (e.cities || []).includes(searchArea))
+    : sorted
+
+  const activeCount = filtered.filter(e => !e.endedAt).length
+  const mergedFilter = searchArea
+    ? [...new Set([...(filterAreas || []), searchArea])]
+    : filterAreas
 
   return (
     <div className="p-4 space-y-3">
+      <AreaSearch allAreas={allAreas} value={searchArea} onChange={setSearchArea} />
       <div className="flex items-center justify-between">
         <div className="text-xs text-slate-400 font-semibold">
-          {sorted.length} אירועים
+          {filtered.length} אירועים{searchArea ? ` (${searchArea})` : ''}
         </div>
         {activeCount > 0 && (
           <div className="text-xs font-semibold text-red-400">
@@ -179,8 +261,8 @@ export default function EventsLog({ events, loading, onAreaClick, filterAreas, c
         )}
       </div>
       <div className="space-y-2">
-        {sorted.map((event, i) => (
-          <EventRow key={`${event.id}-${i}`} event={event} onAreaClick={onAreaClick} filterAreas={filterAreas} catColors={catColors} />
+        {filtered.map((event, i) => (
+          <EventRow key={`${event.id}-${i}`} event={event} onAreaClick={onAreaClick} filterAreas={mergedFilter} catColors={catColors} />
         ))}
       </div>
     </div>

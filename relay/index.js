@@ -125,6 +125,52 @@ function toILTime(date) {
   return date.toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
+/** Detect simultaneous multi-zone salvos: alerts within 20 min hitting >1 zone */
+function detectSimultaneousSalvos(events) {
+  if (events.length === 0) return []
+
+  // Sort by time
+  const sorted = [...events].sort((a, b) => a.startedAt.localeCompare(b.startedAt))
+  const salvos = []
+  const WINDOW_MS = 20 * 60 * 1000 // 20 minutes
+
+  let i = 0
+  while (i < sorted.length) {
+    const windowStart = new Date(sorted[i].startedAt).getTime()
+    const cluster = [sorted[i]]
+    let j = i + 1
+    while (j < sorted.length && new Date(sorted[j].startedAt).getTime() - windowStart < WINDOW_MS) {
+      cluster.push(sorted[j])
+      j++
+    }
+
+    // Collect zones in this cluster
+    const zones = new Set()
+    for (const ev of cluster) {
+      for (const city of (ev.cities || [])) {
+        const zone = cityToZone.get(city)
+        if (zone) zones.add(zone)
+      }
+    }
+
+    if (zones.size > 1) {
+      const time = toILTime(new Date(sorted[i].startedAt))
+      const types = new Set(cluster.map(e => TYPE_LABELS_HE[e.type] || e.type))
+      salvos.push({
+        time,
+        zones: [...zones],
+        types: [...types],
+        count: cluster.length,
+      })
+      i = j // skip past this cluster
+    } else {
+      i++
+    }
+  }
+
+  return salvos
+}
+
 /** Filter alertHistory to a time window and aggregate by zone */
 function aggregateAlertsByZone(start, end) {
   const startISO = start.toISOString()
@@ -206,7 +252,7 @@ function buildPersonalBullet(events, userArea, cycle) {
 /** Generate country-wide summary bullets via Gemini Flash */
 const summaryCache = new Map() // cacheKey → { bullets, generatedAt }
 
-async function generateCountryBullets(byZone, totalAlerts, cycleInfo, force = false) {
+async function generateCountryBullets(byZone, totalAlerts, cycleInfo, events, force = false) {
   const cached = summaryCache.get(cycleInfo.cacheKey)
   if (cached && !force) return cached.bullets
 
@@ -227,19 +273,33 @@ async function generateCountryBullets(byZone, totalAlerts, cycleInfo, force = fa
     return `${zone}: סה"כ ${total} — ${typeDetails}`
   }).join('\n')
 
+  // Detect simultaneous multi-zone salvos
+  const salvos = detectSimultaneousSalvos(events)
+  let salvoSection = ''
+  if (salvos.length > 0) {
+    const salvoLines = salvos.map(s =>
+      `בשעה ${s.time}: ${s.count} התרעות (${s.types.join(', ')}) ב-${s.zones.length} אזורים בו-זמנית — ${s.zones.join(', ')}`
+    ).join('\n')
+    salvoSection = `\n\nמטחים רב-אזוריים (התרעות בו-זמניות ביותר מאזור אחד תוך 20 דקות):\n${salvoLines}`
+  }
+
   const period = cycleInfo.cycle === 'night' ? 'הלילה (18:00-06:00)' : 'היום (06:00-18:00)'
+  const salvoInstruction = salvos.length > 0
+    ? `\n- לכל מטח רב-אזורי (מהרשימה למעלה), הקדש נקודה נפרדת אחת. ציין את השעה, מספר האזורים שנפגעו, ושמות האזורים. אל תאחד מטחים שונים לנקודה אחת.`
+    : ''
+
   const prompt = `אתה כתב חדשות ביטחוני ישראלי. כתוב סיכום קצר של אירועי ההתרעה שהתקבלו ${period}.
 
 נתוני התרעות לפי אזור:
 ${zoneSummaries}
 
-סה"כ: ${totalAlerts} התרעות ב-${zonesSorted.length} אזורים.
+סה"כ: ${totalAlerts} התרעות ב-${zonesSorted.length} אזורים.${salvoSection}
 
 כתוב 7-8 נקודות תמציתיות בעברית בסגנון עדכון חדשותי (לא יבש, אבל מקצועי):
 - התמקד ברמת אזורים (zones), לא בשמות ישובים בודדים
 - ציין מספרים, שעות שיא, וסוגי התרעות
 - אם יש דפוסים מעניינים (אזור שנפגע חזק, שעות מרוכזות, סוג חריג) — ציין
-- אם היה שקט יחסית — ציין גם את זה
+- אם היה שקט יחסית — ציין גם את זה${salvoInstruction}
 - כל נקודה בשורה נפרדת שמתחילה ב-•
 - ללא כותרת, רק הנקודות עצמן`
 
@@ -259,10 +319,10 @@ ${zoneSummaries}
   }
 
   // Fallback — simple count-based summary
-  return generateFallbackBullets(byZone, zonesSorted, totalAlerts, cycleInfo)
+  return generateFallbackBullets(byZone, zonesSorted, totalAlerts, cycleInfo, salvos)
 }
 
-function generateFallbackBullets(byZone, zonesSorted, totalAlerts, cycleInfo) {
+function generateFallbackBullets(byZone, zonesSorted, totalAlerts, cycleInfo, salvos = []) {
   const period = cycleInfo.cycle === 'night' ? 'הלילה' : 'היום'
   const bullets = []
 
@@ -274,6 +334,11 @@ function generateFallbackBullets(byZone, zonesSorted, totalAlerts, cycleInfo) {
   if (top3.length > 0) {
     const topStr = top3.map(z => `${z.zone} (${z.total})`).join(', ')
     bullets.push(`• האזורים הפעילים ביותר: ${topStr}.`)
+  }
+
+  // Simultaneous multi-zone salvos — one bullet each
+  for (const s of salvos) {
+    bullets.push(`• בשעה ${s.time} נרשמו ${s.count} התרעות (${s.types.join(', ')}) ב-${s.zones.length} אזורים בו-זמנית: ${s.zones.join(', ')}.`)
   }
 
   // Type breakdown
@@ -477,10 +542,8 @@ const connState = {
 
 // ── Socket.IO connection ──────────────────────────────────────────────────
 
-const socket = io(`${RA_URL}/client`, {
+const socket = io(RA_URL, {
   auth:                { apiKey: RA_APIKEY },
-  extraHeaders:        { 'Origin': 'https://yariv.org' },
-  transports:          ['polling', 'websocket'],
   reconnection:        true,
   reconnectionAttempts: Infinity,
   reconnectionDelay:   5000,
@@ -1040,7 +1103,7 @@ app.get('/api/summary', async (req, res) => {
 
     if (hasEvents) {
       personalBullet = buildPersonalBullet(events, userArea, cycleInfo.cycle)
-      bullets = await generateCountryBullets(byZone, totalAlerts, cycleInfo, force)
+      bullets = await generateCountryBullets(byZone, totalAlerts, cycleInfo, events, force)
     }
 
     console.log(`[summary] zone=${userZone ?? 'none'} cycle=${cycleInfo.cacheKey} events=${totalAlerts} bullets=${bullets.length}`)

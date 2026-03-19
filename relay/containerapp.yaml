@@ -1,15 +1,6 @@
 properties:
-  configuration:
-    secrets:
-      # Secret values managed via Azure CLI: az containerapp secret set
-      - name: ra-apikey
-        value: "REDACTED — set via az containerapp secret set"
-      - name: ra-http-key
-        value: "REDACTED — set via az containerapp secret set"
-      - name: gemini-api-key
-        value: "REDACTED — set via az containerapp secret set"
   template:
-    revisionSuffix: v1-21
+    revisionSuffix: v1-28b
     containers:
       - name: redalert-relay
         image: redalertrelay.azurecr.io/redalert-relay:latest

@@ -1,6 +1,13 @@
 import React, { useEffect } from 'react'
 import { X } from 'lucide-react'
 
+function renderBold(text) {
+  const parts = text.split(/\*\*(.+?)\*\*/g)
+  return parts.map((part, i) =>
+    i % 2 === 1 ? <strong key={i} className="font-semibold text-white">{part}</strong> : part
+  )
+}
+
 export default function SummaryBulletin({ data, onClose }) {
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose() }
@@ -49,7 +56,7 @@ export default function SummaryBulletin({ data, onClose }) {
               {/* Personal bullet — always first */}
               {personalBullet && (
                 <div className="bg-blue-900/30 border border-blue-700/50 rounded-xl px-4 py-3">
-                  <p className="text-blue-200 text-sm leading-relaxed">{personalBullet}</p>
+                  <p className="text-blue-200 text-sm leading-relaxed">{renderBold(personalBullet)}</p>
                 </div>
               )}
 
@@ -58,7 +65,7 @@ export default function SummaryBulletin({ data, onClose }) {
                 <div className="flex flex-col gap-3">
                   {bullets.map((bullet, i) => (
                     <div key={i} className="flex gap-2 items-start">
-                      <p className="text-slate-200 text-sm leading-relaxed">{bullet}</p>
+                      <p className="text-slate-200 text-sm leading-relaxed">{renderBold(bullet)}</p>
                     </div>
                   ))}
                 </div>

@@ -10,5 +10,4 @@ alarms.csv
 deploy/israel-alerts/
 deploy/.env.deploy
 secrets.txt
-relay/alert-history-merged.json
 relay/Azure console.txt
