@@ -55,7 +55,7 @@ export default function LivePanel({ currentAlerts, lastRefresh, loading, onAreaC
           </div>
           {alert.cities?.length > 0 && (
             <div className="space-y-1 pr-1 overflow-y-auto" style={{ maxHeight: '40vh' }}>
-              {alert.cities.map(city => (
+              {[...alert.cities].sort(new Intl.Collator('he').compare).map(city => (
                 <div key={city} className="flex items-center gap-2 text-xs">
                   <MapPin size={10} className="text-slate-500 shrink-0" />
                   <button

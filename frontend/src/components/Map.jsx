@@ -8,6 +8,13 @@ import { getHourColor } from '../utils/analytics'
 import { MAP_TILES, DEFAULT_MAP_TYPE } from '../utils/mapTiles'
 
 const ISRAEL_CENTER = [31.0461, 34.8516]
+
+// Expose map instance globally for Puppeteer screenshot automation
+function ExposeMap() {
+  const map = useMap()
+  useEffect(() => { window.__leafletMap = map }, [map])
+  return null
+}
 const DEFAULT_ZOOM  = 8
 
 const BTN_STYLE = {
@@ -187,6 +194,43 @@ function MapControls({ rulerActive, onToggleRuler }) {
       </div>
     </div>
   )
+}
+
+function UserLocation() {
+  const map = useMap()
+  const markerRef = useRef(null)
+
+  useEffect(() => {
+    if (!navigator.geolocation) return
+
+    const onSuccess = ({ coords }) => {
+      const latlng = [coords.latitude, coords.longitude]
+      if (!markerRef.current) {
+        const icon = L.divIcon({
+          className: '',
+          html: '<div class="user-location-marker"><div class="user-location-pulse"></div><div class="user-location-dot"></div></div>',
+          iconSize: [16, 16],
+          iconAnchor: [8, 8],
+        })
+        markerRef.current = L.marker(latlng, { icon, interactive: false, zIndexOffset: 1000 }).addTo(map)
+      } else {
+        markerRef.current.setLatLng(latlng)
+      }
+    }
+
+    const watchId = navigator.geolocation.watchPosition(onSuccess, () => {}, {
+      enableHighAccuracy: false,
+      maximumAge: 30000,
+      timeout: 15000,
+    })
+
+    return () => {
+      navigator.geolocation.clearWatch(watchId)
+      if (markerRef.current) { map.removeLayer(markerRef.current); markerRef.current = null }
+    }
+  }, [map])
+
+  return null
 }
 
 function FlyToArea({ areaName, zones }) {
@@ -480,8 +524,10 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
         subdomains={MAP_TILES[mapType]?.subdomains ?? 'abc'}
       />
 
+      <ExposeMap />
       <MapControls rulerActive={rulerActive} onToggleRuler={toggleRuler} />
       <RulerTool active={rulerActive} onDeactivate={() => setRulerActive(false)} />
+      <UserLocation />
       <LiveFlyTo currentAlerts={currentAlerts} />
       <FlyToArea areaName={flyToArea} zones={zones} />
 

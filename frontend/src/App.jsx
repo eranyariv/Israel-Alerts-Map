@@ -28,6 +28,11 @@ const HISTORY_TABS = [
 function defaultFrom() { const d = new Date(); d.setMonth(d.getMonth() - 3); return d }
 function defaultTo()   { return new Date() }
 
+const urlParams = new URLSearchParams(window.location.search)
+const URL_MODE = urlParams.get('mode')
+const URL_FROM = urlParams.get('from')
+const URL_TO   = urlParams.get('to')
+
 const RELAY_URL = 'https://redalert-relay.yellowforest-0da0af56.uaenorth.azurecontainerapps.io'
 
 function RelayStatus({ wsConnected, relayHealth, mode }) {
@@ -240,8 +245,16 @@ class AppErrorBoundary extends React.Component {
 }
 
 function AppInner() {
-  const [mode,            setMode]            = useState(() => localStorage.getItem('viewMode') || 'live')
+  const [mode,            setMode]            = useState(() => URL_MODE || localStorage.getItem('viewMode') || 'live')
   const [filters,         setFilters]         = useState(() => {
+    if (URL_FROM || URL_TO) {
+      return {
+        categories: ALL_CATEGORIES,
+        from: URL_FROM ? new Date(URL_FROM) : defaultFrom(),
+        to:   URL_TO   ? new Date(URL_TO)   : defaultTo(),
+        areas: null,
+      }
+    }
     try {
       const s = JSON.parse(localStorage.getItem('historyFilters'))
       if (s) return {

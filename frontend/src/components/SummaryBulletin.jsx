@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react'
-import { X } from 'lucide-react'
+import React, { useEffect, useState, useCallback } from 'react'
+import { X, Share2 } from 'lucide-react'
 
 function renderBold(text) {
   const parts = text.split(/\*\*(.+?)\*\*/g)
@@ -8,12 +8,33 @@ function renderBold(text) {
   )
 }
 
+function stripBold(text) {
+  return text.replace(/\*\*(.+?)\*\*/g, '$1')
+}
+
 export default function SummaryBulletin({ data, onClose }) {
+  const [shared, setShared] = useState(false)
+
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [onClose])
+
+  const handleShare = useCallback(async () => {
+    if (!data?.hasEvents || !data.bullets?.length) return
+    const bulletText = data.bullets.map(b => stripBold(b)).join('\n')
+    const text = `${data.title} (${data.subtitle})\n\n${bulletText}\n\nhttps://yariv.org/map`
+    if (navigator.share) {
+      try { await navigator.share({ title: data.title, text }) } catch {}
+    } else {
+      try {
+        await navigator.clipboard.writeText(text)
+        setShared(true)
+        setTimeout(() => setShared(false), 2000)
+      } catch {}
+    }
+  }, [data])
 
   if (!data) return null
 
@@ -73,6 +94,21 @@ export default function SummaryBulletin({ data, onClose }) {
             </div>
           )}
         </div>
+
+        {/* Share footer */}
+        {hasEvents && bullets.length > 0 && (
+          <div className="px-5 py-3 border-t border-slate-700">
+            <button
+              onClick={handleShare}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl
+                         bg-blue-600 hover:bg-blue-500 active:bg-blue-700 transition-colors
+                         text-white text-sm font-semibold"
+            >
+              <Share2 size={16} />
+              {shared ? 'הקישור הועתק!' : 'שתף סיכום'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

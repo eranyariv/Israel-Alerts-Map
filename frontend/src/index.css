@@ -139,6 +139,45 @@ body {
   transform-origin: top center;
 }
 
+/* User location marker */
+.user-location-marker {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  overflow: visible;
+}
+
+.user-location-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 12px;
+  height: 12px;
+  background: #3b82f6;
+  border-radius: 50%;
+  border: 2px solid white;
+  box-shadow: 0 0 6px rgba(59, 130, 246, 0.9);
+  z-index: 2;
+}
+
+.user-location-pulse {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(59, 130, 246, 0.45);
+  animation: userLocationPulse 2.2s ease-out infinite;
+  z-index: 1;
+}
+
+@keyframes userLocationPulse {
+  0%   { transform: translate(-50%, -50%) scale(1);   opacity: 0.7; }
+  100% { transform: translate(-50%, -50%) scale(3);   opacity: 0; }
+}
+
 /* Legend gradient */
 .heatmap-legend {
   background: linear-gradient(to left, #dc2626, #ea580c, #eab308, #84cc16, #16a34a);

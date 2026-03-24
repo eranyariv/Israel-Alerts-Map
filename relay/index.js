@@ -777,7 +777,15 @@ async function captureHeatmapScreenshot(cycleInfo) {
   const browser = await launchBrowser()
   try {
     const page = await browser.newPage()
-    await page.setViewport({ width: 1200, height: 800 })
+    await page.setViewport({ width: 800, height: 800 })
+
+    // Pre-set localStorage so map opens at desired zoom centered on Israel
+    await page.goto(MAP_URL, { waitUntil: 'domcontentloaded', timeout: 15000 })
+    await page.evaluate(() => {
+      localStorage.setItem('mapView', JSON.stringify({ center: [31.6, 34.8], zoom: 8 }))
+    })
+
+    // Navigate to the filtered URL — fresh load picks up localStorage
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 45000 })
 
     // Wait for GeoJSON polygons to render
@@ -786,12 +794,24 @@ async function captureHeatmapScreenshot(cycleInfo) {
 
     // Hide everything except the map
     await page.evaluate(() => {
-      document.querySelectorAll('aside, nav, header, button, [class*="bottom-"], [class*="Banner"], [class*="Bulletin"]')
+      document.querySelectorAll('aside, nav, header, button, [class*="bottom-"], [class*="Banner"], [class*="Bulletin"], [class*="Stats"], [class*="Filter"], [class*="Panel"], [class*="Debug"], [class*="sheet"]')
         .forEach(el => { el.style.display = 'none' })
       const fixed = document.querySelectorAll('.fixed, [class*="fixed"]')
       fixed.forEach(el => { if (!el.closest('.leaflet-container')) el.style.display = 'none' })
+      // Make the map fill the entire viewport
+      const mapEl = document.querySelector('.leaflet-container')
+      if (mapEl) { mapEl.style.width = '100vw'; mapEl.style.height = '100vh'; mapEl.style.position = 'fixed'; mapEl.style.top = '0'; mapEl.style.left = '0' }
+      window.dispatchEvent(new Event('resize'))
     })
-    await new Promise(r => setTimeout(r, 500))
+    await new Promise(r => setTimeout(r, 1500))
+
+    // Set map view via the globally exposed Leaflet map instance
+    await page.evaluate(() => {
+      if (window.__leafletMap && typeof window.__leafletMap.setView === 'function') {
+        window.__leafletMap.setView([31.6, 34.8], 8, { animate: false })
+      }
+    })
+    await new Promise(r => setTimeout(r, 2000))
 
     return await page.screenshot({ type: 'png' })
   } finally {
@@ -804,23 +824,29 @@ async function buildCompositeImage(mapBuffer, bullets, cycleInfo) {
   const mapBase64 = mapBuffer.toString('base64')
 
   const bulletsHtml = bullets.map(b => {
-    const escaped = b.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    return `<p>${escaped}</p>`
+    // Convert **bold** to placeholders before HTML escaping
+    const parts = b.split(/\*\*/)
+    let result = ''
+    for (let i = 0; i < parts.length; i++) {
+      const escaped = parts[i].replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      result += i % 2 === 1 ? `<strong>${escaped}</strong>` : escaped
+    }
+    return `<p>${result}</p>`
   }).join('')
 
   const html = `<!DOCTYPE html>
-<html dir="rtl"><head><meta charset="utf-8">
+<html><head><meta charset="utf-8">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box }
-  body { background: #0f172a; width: 1200px; font-family: 'Noto Sans Hebrew', 'Noto Sans', system-ui, sans-serif }
-  .map { width: 1200px; height: 675px; overflow: hidden }
-  .map img { width: 100%; height: 100%; object-fit: cover }
-  .text { padding: 28px 36px }
-  .text h2 { font-size: 30px; font-weight: 800; color: #f8fafc; margin-bottom: 20px }
-  .text p { font-size: 18px; line-height: 1.8; margin-bottom: 6px; color: #cbd5e1 }
+  html, body { overflow: hidden }
+  body { background: #0f172a; width: 800px; font-family: 'Noto Sans Hebrew', 'Noto Sans', system-ui, sans-serif; direction: ltr }
+  .map { width: 800px; height: 800px; overflow: hidden }
+  .map img { width: 100%; height: 100%; object-fit: contain }
+  .text { padding: 28px 32px; text-align: center; direction: rtl }
+  .text h2 { font-size: 28px; font-weight: 800; color: #f8fafc; margin-bottom: 18px }
+  .text p { font-size: 16px; line-height: 1.85; margin-bottom: 4px; color: #cbd5e1; text-align: right; overflow-wrap: break-word; word-wrap: break-word }
   .text strong { color: #f8fafc; font-weight: 700 }
-  .footer { padding: 16px 36px 24px; font-size: 14px; color: #475569 }
+  .footer { padding: 14px 32px 22px; font-size: 13px; color: #475569; text-align: center }
 </style>
 </head><body>
   <div class="map"><img src="data:image/png;base64,${mapBase64}"></div>
@@ -828,13 +854,15 @@ async function buildCompositeImage(mapBuffer, bullets, cycleInfo) {
     <h2>${heading}</h2>
     ${bulletsHtml}
   </div>
-  <div class="footer">yariv.org/map • מפת חוסן ישראל</div>
+  <div class="footer">yariv.org/map</div>
 </body></html>`
 
   const browser = await launchBrowser()
   try {
     const page = await browser.newPage()
+    await page.setViewport({ width: 800, height: 600 })
     await page.setContent(html, { waitUntil: 'load' })
+    await page.evaluate(() => window.scrollTo(0, 0))
     const body = await page.$('body')
     return await body.screenshot({ type: 'png' })
   } finally {
@@ -2211,6 +2239,24 @@ app.post('/prompt/test', async (req, res) => {
     res.json({ title: cycleInfo.title, cycle: cycleInfo.cycle, totalAlerts, bullets, prompt: builtPrompt })
   } catch (e) {
     console.error('[prompt/test] error:', e.message)
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.get('/prompt/tweet-preview', async (req, res) => {
+  if (!ADMIN_PASSWORD || !isAdmin(req)) return res.status(401).json({ error: 'Unauthorized' })
+  try {
+    const cycleInfo = getCurrentCycle()
+    const { byZone, totalAlerts, events } = aggregateAlertsByZone(cycleInfo.start, cycleInfo.end)
+    if (totalAlerts === 0) return res.status(404).send('No alerts for this cycle')
+    const bullets = await generateCountryBullets(byZone, totalAlerts, cycleInfo, events, true)
+    if (!bullets || bullets.length < 2) return res.status(404).send('Not enough data')
+    const mapBuffer = await captureHeatmapScreenshot(cycleInfo)
+    const compositeBuffer = await buildCompositeImage(mapBuffer, bullets, cycleInfo)
+    res.set('Content-Type', 'image/png')
+    res.send(Buffer.from(compositeBuffer))
+  } catch (e) {
+    console.error('[prompt/tweet-preview] error:', e.message)
     res.status(500).json({ error: e.message })
   }
 })

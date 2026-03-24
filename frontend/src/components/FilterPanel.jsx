@@ -133,7 +133,7 @@ function AreaFilter({ areas, allAreas, onChange }) {
       {/* Selected chips */}
       {!isAll && areas.length > 0 && (
         <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
-          {areas.map(name => (
+          {[...areas].sort(new Intl.Collator('he').compare).map(name => (
             <span
               key={name}
               className="inline-flex items-center gap-1 bg-blue-900/40 border border-blue-700/50

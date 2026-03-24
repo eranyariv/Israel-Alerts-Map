@@ -1,6 +1,6 @@
 {
   "name": "redalert-relay",
-  "version": "1.36",
+  "version": "1.48",
   "type": "module",
   "scripts": {
     "start": "node index.js"
