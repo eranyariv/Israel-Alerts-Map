@@ -1,12 +1,12 @@
 properties:
   template:
-    revisionSuffix: v1-32
+    revisionSuffix: v1-36
     containers:
       - name: redalert-relay
         image: redalertrelay.azurecr.io/redalert-relay:latest
         resources:
-          cpu: 0.5
-          memory: 1Gi
+          cpu: 1
+          memory: 2Gi
         env:
           - name: RA_APIKEY
             secretRef: ra-apikey
@@ -16,6 +16,14 @@ properties:
             secretRef: gemini-api-key
           - name: ADMIN_PASSWORD
             secretRef: admin-password
+          - name: X_CONSUMER_KEY
+            secretRef: x-consumer-key
+          - name: X_CONSUMER_SECRET
+            secretRef: x-consumer-secret
+          - name: X_ACCESS_TOKEN
+            secretRef: x-access-token
+          - name: X_ACCESS_TOKEN_SECRET
+            secretRef: x-access-token-secret
         volumeMounts:
           - volumeName: relay-data
             mountPath: /data

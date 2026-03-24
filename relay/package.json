@@ -1,6 +1,6 @@
 {
   "name": "redalert-relay",
-  "version": "1.32",
+  "version": "1.36",
   "type": "module",
   "scripts": {
     "start": "node index.js"
@@ -8,6 +8,9 @@
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
     "express": "^4.19.2",
-    "socket.io-client": "^4.8.3"
+    "puppeteer": "^24.0.0",
+    "sharp": "^0.33.0",
+    "socket.io-client": "^4.8.3",
+    "twitter-api-v2": "^1.18.0"
   }
 }

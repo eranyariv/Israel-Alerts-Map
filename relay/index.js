@@ -3,6 +3,8 @@ import { io } from 'socket.io-client'
 import { readFileSync, writeFile, writeFileSync, existsSync } from 'fs'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { createHmac, timingSafeEqual } from 'crypto'
+import puppeteer from 'puppeteer'
+import { TwitterApi } from 'twitter-api-v2'
 
 const { version: VERSION } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
 
@@ -11,6 +13,10 @@ const RA_APIKEY     = process.env.RA_APIKEY      // public key — used for sock
 const RA_HTTP_KEY   = process.env.RA_HTTP_KEY    // private key — used for REST API (history)
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY // Gemini Flash free tier
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD // password for /prompt editor
+const X_CONSUMER_KEY      = process.env.X_CONSUMER_KEY
+const X_CONSUMER_SECRET   = process.env.X_CONSUMER_SECRET
+const X_ACCESS_TOKEN      = process.env.X_ACCESS_TOKEN
+const X_ACCESS_TOKEN_SECRET = process.env.X_ACCESS_TOKEN_SECRET
 const PORT          = process.env.PORT ?? 8080
 
 if (!RA_APIKEY) {
@@ -25,6 +31,21 @@ if (!GEMINI_API_KEY) {
 }
 if (!ADMIN_PASSWORD) {
   console.warn('[relay] ADMIN_PASSWORD not set — /prompt editor will be disabled')
+}
+
+// ── Twitter/X client ──────────────────────────────────────────────────────
+const twitterClient = (X_CONSUMER_KEY && X_CONSUMER_SECRET && X_ACCESS_TOKEN && X_ACCESS_TOKEN_SECRET)
+  ? new TwitterApi({
+      appKey: X_CONSUMER_KEY,
+      appSecret: X_CONSUMER_SECRET,
+      accessToken: X_ACCESS_TOKEN,
+      accessSecret: X_ACCESS_TOKEN_SECRET,
+    })
+  : null
+if (!twitterClient) {
+  console.warn('[relay] X API keys not set — auto-tweet disabled')
+} else {
+  console.log('[relay] X/Twitter client initialized')
 }
 
 // ── Admin auth helpers ────────────────────────────────────────────────────
@@ -734,6 +755,164 @@ socket.on('endAlert', (alert) => {
   saveHistory()
   console.log('[redalert] endAlert:', type, '— cleared:', typesToClear, '— active types:', [...activeAlerts.keys()])
 })
+
+// ── Auto-tweet: heatmap screenshot + bulletin ─────────────────────────────
+
+const TWEET_STATE_FILE = '/data/last-tweet.json'
+const MAP_URL = 'https://yariv.org/map'
+
+async function launchBrowser() {
+  return puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+  })
+}
+
+async function captureHeatmapScreenshot(cycleInfo) {
+  const from = cycleInfo.start.toISOString()
+  const to = cycleInfo.end.toISOString()
+  const url = `${MAP_URL}?mode=history&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+
+  const browser = await launchBrowser()
+  try {
+    const page = await browser.newPage()
+    await page.setViewport({ width: 1200, height: 800 })
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 45000 })
+
+    // Wait for GeoJSON polygons to render
+    await page.waitForSelector('.leaflet-overlay-pane path', { timeout: 20000 }).catch(() => {})
+    await new Promise(r => setTimeout(r, 3000))
+
+    // Hide everything except the map
+    await page.evaluate(() => {
+      document.querySelectorAll('aside, nav, header, button, [class*="bottom-"], [class*="Banner"], [class*="Bulletin"]')
+        .forEach(el => { el.style.display = 'none' })
+      const fixed = document.querySelectorAll('.fixed, [class*="fixed"]')
+      fixed.forEach(el => { if (!el.closest('.leaflet-container')) el.style.display = 'none' })
+    })
+    await new Promise(r => setTimeout(r, 500))
+
+    return await page.screenshot({ type: 'png' })
+  } finally {
+    await browser.close()
+  }
+}
+
+async function buildCompositeImage(mapBuffer, bullets, cycleInfo) {
+  const heading = cycleInfo.cycle === 'night' ? 'אז מה קרה הלילה?' : 'אז מה קרה היום?'
+  const mapBase64 = mapBuffer.toString('base64')
+
+  const bulletsHtml = bullets.map(b => {
+    const escaped = b.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    return `<p>${escaped}</p>`
+  }).join('')
+
+  const html = `<!DOCTYPE html>
+<html dir="rtl"><head><meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box }
+  body { background: #0f172a; width: 1200px; font-family: 'Noto Sans Hebrew', 'Noto Sans', system-ui, sans-serif }
+  .map { width: 1200px; height: 675px; overflow: hidden }
+  .map img { width: 100%; height: 100%; object-fit: cover }
+  .text { padding: 28px 36px }
+  .text h2 { font-size: 30px; font-weight: 800; color: #f8fafc; margin-bottom: 20px }
+  .text p { font-size: 18px; line-height: 1.8; margin-bottom: 6px; color: #cbd5e1 }
+  .text strong { color: #f8fafc; font-weight: 700 }
+  .footer { padding: 16px 36px 24px; font-size: 14px; color: #475569 }
+</style>
+</head><body>
+  <div class="map"><img src="data:image/png;base64,${mapBase64}"></div>
+  <div class="text">
+    <h2>${heading}</h2>
+    ${bulletsHtml}
+  </div>
+  <div class="footer">yariv.org/map • מפת חוסן ישראל</div>
+</body></html>`
+
+  const browser = await launchBrowser()
+  try {
+    const page = await browser.newPage()
+    await page.setContent(html, { waitUntil: 'load' })
+    const body = await page.$('body')
+    return await body.screenshot({ type: 'png' })
+  } finally {
+    await browser.close()
+  }
+}
+
+function getLastTweetState() {
+  try {
+    if (existsSync(TWEET_STATE_FILE)) return JSON.parse(readFileSync(TWEET_STATE_FILE, 'utf8'))
+  } catch {}
+  return {}
+}
+
+function saveLastTweetState(state) {
+  try { writeFileSync(TWEET_STATE_FILE, JSON.stringify(state), 'utf8') } catch (e) {
+    console.error('[tweet] Failed to save state:', e.message)
+  }
+}
+
+async function autoTweet(cycleInfo, force = false) {
+  if (!twitterClient) { console.warn('[tweet] No Twitter client'); return null }
+
+  // Check if already tweeted for this cycle
+  const lastState = getLastTweetState()
+  if (!force && lastState.cacheKey === cycleInfo.cacheKey) {
+    console.log(`[tweet] Already tweeted for ${cycleInfo.cacheKey}`)
+    return null
+  }
+
+  // Generate bullets
+  const { byZone, totalAlerts, events } = aggregateAlertsByZone(cycleInfo.start, cycleInfo.end)
+  if (totalAlerts === 0) {
+    console.log(`[tweet] No alerts for ${cycleInfo.cacheKey}, skipping`)
+    return null
+  }
+  const bullets = await generateCountryBullets(byZone, totalAlerts, cycleInfo, events, true)
+  if (!bullets || bullets.length < 2) {
+    console.log(`[tweet] Not enough bullets for ${cycleInfo.cacheKey}, skipping`)
+    return null
+  }
+
+  console.log(`[tweet] Generating image for ${cycleInfo.cacheKey}...`)
+
+  // Capture map screenshot and build composite
+  const mapBuffer = await captureHeatmapScreenshot(cycleInfo)
+  const compositeBuffer = await buildCompositeImage(mapBuffer, bullets, cycleInfo)
+
+  // Upload image and post tweet
+  const heading = cycleInfo.cycle === 'night' ? 'אז מה קרה הלילה?' : 'אז מה קרה היום?'
+  const tweetText = `${heading}\n${MAP_URL}`
+
+  const mediaId = await twitterClient.v1.uploadMedia(Buffer.from(compositeBuffer), { mimeType: 'image/png' })
+  const tweet = await twitterClient.v2.tweet({ text: tweetText, media: { media_ids: [mediaId] } })
+
+  console.log(`[tweet] Posted tweet ${tweet.data.id} for ${cycleInfo.cacheKey}`)
+  saveLastTweetState({ cacheKey: cycleInfo.cacheKey, tweetId: tweet.data.id, tweetedAt: new Date().toISOString() })
+  return tweet.data
+}
+
+// ── Tweet scheduler: check every 5 min ────────────────────────────────────
+setInterval(async () => {
+  if (!twitterClient) return
+  try {
+    const offsetMs = getILOffsetMs()
+    const ilNow = new Date(Date.now() + offsetMs)
+    const ilMinutes = ilNow.getUTCHours() * 60 + ilNow.getUTCMinutes()
+
+    // Tweet at 06:15-06:20 (night summary) and 18:15-18:20 (day summary)
+    const isTweetWindow = (ilMinutes >= 375 && ilMinutes <= 380) || (ilMinutes >= 1095 && ilMinutes <= 1100)
+    if (!isTweetWindow) return
+
+    const cycleInfo = getCurrentCycle()
+    await autoTweet(cycleInfo)
+  } catch (e) {
+    console.error('[tweet] Scheduler error:', e.message)
+  }
+}, 5 * 60 * 1000)
 
 // ── HTTP server ───────────────────────────────────────────────────────────
 
@@ -2036,6 +2215,20 @@ app.post('/prompt/test', async (req, res) => {
   }
 })
 
+app.post('/prompt/tweet', async (req, res) => {
+  if (!ADMIN_PASSWORD || !isAdmin(req)) return res.status(401).json({ error: 'Unauthorized' })
+  if (!twitterClient) return res.status(503).json({ error: 'Twitter client not configured' })
+  try {
+    const cycleInfo = getCurrentCycle()
+    const result = await autoTweet(cycleInfo, true)
+    if (!result) return res.json({ ok: false, message: 'No alerts or not enough data to tweet' })
+    res.json({ ok: true, tweetId: result.id, cycle: cycleInfo.cacheKey })
+  } catch (e) {
+    console.error('[prompt/tweet] error:', e.message)
+    res.status(500).json({ error: e.message })
+  }
+})
+
 app.get('/prompt', (req, res) => {
   const authed = ADMIN_PASSWORD && isAdmin(req)
   const currentPrompt = authed ? loadSummaryPromptTemplate() : ''
@@ -2046,7 +2239,7 @@ app.get('/prompt', (req, res) => {
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8')
   res.send(`<!DOCTYPE html>
-<html lang="he" dir="rtl">
+<html lang="en" dir="ltr">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -2061,7 +2254,7 @@ app.get('/prompt', (req, res) => {
   .card { background: #111827; border: 1px solid #334155; border-radius: 1rem; padding: 2rem; margin-bottom: 1.5rem }
   label { font-size: .85rem; font-weight: 600; color: #94a3b8; display: block; margin-bottom: .5rem }
   input[type=password] { width: 100%; padding: .6rem 1rem; background: #1e293b; color: #e2e8f0;
-    border: 1px solid #334155; border-radius: .5rem; font-size: 1rem; direction: ltr }
+    border: 1px solid #334155; border-radius: .5rem; font-size: 1rem }
   input[type=password]:focus { outline: none; border-color: #3b82f6 }
   textarea { width: 100%; min-height: 360px; padding: 1rem; background: #1e293b; color: #e2e8f0;
     border: 1px solid #334155; border-radius: .5rem; font-size: .88rem; font-family: monospace;
@@ -2080,7 +2273,7 @@ app.get('/prompt', (req, res) => {
   .alert-success { background: #14532d33; border: 1px solid #166534; color: #86efac }
   .placeholders { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .5rem }
   .chip { font-family: monospace; font-size: .75rem; background: #1e293b;
-    border: 1px solid #334155; border-radius: .3rem; padding: .2rem .55rem; color: #a5b4fc; direction: ltr }
+    border: 1px solid #334155; border-radius: .3rem; padding: .2rem .55rem; color: #a5b4fc }
   .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem }
   .logout-form { display: inline }
 </style>
@@ -2089,7 +2282,7 @@ app.get('/prompt', (req, res) => {
 <div class="page">
 ${!ADMIN_PASSWORD ? `
   <h1>⚠️ Prompt Editor <span>Disabled</span></h1>
-  <div class="card"><p>Set the <code style="background:#1e293b;border:1px solid #334155;border-radius:.3rem;padding:.1rem .35rem;font-size:.88em;color:#93c5fd;direction:ltr">ADMIN_PASSWORD</code> environment variable to enable the prompt editor.</p></div>
+  <div class="card"><p>Set the <code style="background:#1e293b;border:1px solid #334155;border-radius:.3rem;padding:.1rem .35rem;font-size:.88em;color:#93c5fd">ADMIN_PASSWORD</code> environment variable to enable the prompt editor.</p></div>
 ` : !authed ? `
   <h1>🔐 Prompt Editor</h1>
   <p class="subtitle">Log in to edit the Gemini summary prompt template</p>
@@ -2145,6 +2338,14 @@ ${!ADMIN_PASSWORD ? `
       </details>
     </div>
   </div>
+${twitterClient ? `
+  <div class="card">
+    <label>Post to X/Twitter</label>
+    <p style="font-size:.82rem;color:#64748b;margin-bottom:1rem">Capture a heatmap screenshot, compose a bulletin image, and post it to X. This takes ~30 seconds.</p>
+    <button type="button" class="btn btn-accent" id="tweetBtn" onclick="postTweet()" style="background:#1d9bf0;border-color:#1a8cd8">🐦 Tweet Now</button>
+    <div id="tweetResult" style="display:none;margin-top:1rem"></div>
+  </div>
+` : ''}
   <script>
   async function testPrompt() {
     const btn = document.getElementById('testBtn')
@@ -2180,6 +2381,30 @@ ${!ADMIN_PASSWORD ? `
     } finally {
       btn.disabled = false
       btn.textContent = '🚀 Generate Bulletin'
+    }
+  }
+  async function postTweet() {
+    const btn = document.getElementById('tweetBtn')
+    const result = document.getElementById('tweetResult')
+    btn.disabled = true
+    btn.textContent = '⏳ Generating & posting…'
+    result.style.display = 'none'
+    try {
+      const res = await fetch('/prompt/tweet', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Request failed')
+      if (!data.ok) {
+        result.innerHTML = '<div class="alert alert-error">' + (data.message || 'No data to tweet') + '</div>'
+      } else {
+        result.innerHTML = '<div class="alert alert-success">✓ Tweet posted! <a href="https://x.com/eranyariv/status/' + data.tweetId + '" target="_blank" style="color:#86efac">View tweet →</a></div>'
+      }
+      result.style.display = 'block'
+    } catch (e) {
+      result.innerHTML = '<div class="alert alert-error">❌ ' + e.message + '</div>'
+      result.style.display = 'block'
+    } finally {
+      btn.disabled = false
+      btn.textContent = '🐦 Tweet Now'
     }
   }
   </script>
