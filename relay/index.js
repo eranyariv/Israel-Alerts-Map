@@ -1,7 +1,8 @@
 import express from 'express'
 import { io } from 'socket.io-client'
-import { readFileSync, writeFile } from 'fs'
+import { readFileSync, writeFile, writeFileSync, existsSync } from 'fs'
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import { createHmac, timingSafeEqual } from 'crypto'
 
 const { version: VERSION } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
 
@@ -9,6 +10,7 @@ const RA_URL        = 'https://redalert.orielhaim.com'
 const RA_APIKEY     = process.env.RA_APIKEY      // public key — used for socket /client connection
 const RA_HTTP_KEY   = process.env.RA_HTTP_KEY    // private key — used for REST API (history)
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY // Gemini Flash free tier
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD // password for /prompt editor
 const PORT          = process.env.PORT ?? 8080
 
 if (!RA_APIKEY) {
@@ -20,6 +22,47 @@ if (!RA_HTTP_KEY) {
 }
 if (!GEMINI_API_KEY) {
   console.warn('[relay] GEMINI_API_KEY not set — summary LLM calls will use fallback')
+}
+if (!ADMIN_PASSWORD) {
+  console.warn('[relay] ADMIN_PASSWORD not set — /prompt editor will be disabled')
+}
+
+// ── Admin auth helpers ────────────────────────────────────────────────────
+const ADMIN_COOKIE  = 'relay_admin'
+const COOKIE_MAX_AGE = 7 * 24 * 60 * 60 // 7 days in seconds
+
+function signToken(password) {
+  const expires = Date.now() + COOKIE_MAX_AGE * 1000
+  const payload = `admin:${expires}`
+  const sig = createHmac('sha256', password).update(payload).digest('hex')
+  return `${payload}:${sig}`
+}
+
+function verifyToken(token, password) {
+  if (!token || !password) return false
+  const parts = token.split(':')
+  if (parts.length !== 3) return false
+  const [role, expires, sig] = parts
+  if (role !== 'admin' || Date.now() > Number(expires)) return false
+  const expected = createHmac('sha256', password).update(`${role}:${expires}`).digest('hex')
+  try {
+    return timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex'))
+  } catch { return false }
+}
+
+function parseCookies(header) {
+  const cookies = {}
+  if (!header) return cookies
+  for (const pair of header.split(';')) {
+    const [k, ...v] = pair.trim().split('=')
+    if (k) cookies[k.trim()] = v.join('=').trim()
+  }
+  return cookies
+}
+
+function isAdmin(req) {
+  const cookies = parseCookies(req.headers.cookie)
+  return verifyToken(cookies[ADMIN_COOKIE], ADMIN_PASSWORD)
 }
 
 // ── Gemini Flash LLM ──────────────────────────────────────────────────────
@@ -252,6 +295,49 @@ function buildPersonalBullet(events, userArea, cycle) {
 /** Generate country-wide summary bullets via Gemini Flash */
 const summaryCache = new Map() // cacheKey → { bullets, generatedAt }
 
+// ── Externalised LLM prompt template ─────────────────────────────────────
+const SUMMARY_PROMPT_FILE = '/data/summary-prompt.txt'
+
+const DEFAULT_SUMMARY_PROMPT = `אתה כתב חדשות ביטחוני ישראלי. כתוב סיכום קצר של אירועי ההתרעה שהתקבלו {{period}}.
+
+נתוני התרעות לפי אזור:
+{{zoneSummaries}}
+
+סה"כ: {{totalAlerts}} התרעות ב-{{zoneCount}} אזורים.{{salvoSection}}
+
+כתוב 7-8 נקודות תמציתיות בעברית בסגנון עדכון חדשותי (לא יבש, אבל מקצועי):
+- התמקד ברמת אזורים (zones), לא בשמות ישובים בודדים
+- ציין מספרים, שעות שיא, וסוגי התרעות
+- אם יש דפוסים מעניינים (אזור שנפגע חזק, שעות מרוכזות, סוג חריג) — ציין
+- אם היה שקט יחסית — ציין גם את זה
+- שים דגש מיוחד על אזורים מאוכלסים: דן, ירושלים, שפלת יהודה, המפרץ, ירקון, השרון, לכיש, השפלה, ומרכז הנגב. אם היו התרעות באזורים אלה — הדגש אותן. אם לא היו — ציין את השקט באזורים אלה{{salvoInstruction}}
+- כל נקודה בשורה נפרדת שמתחילה ב-•
+- ללא כותרת, רק הנקודות עצמן`
+
+function loadSummaryPromptTemplate() {
+  try {
+    if (existsSync(SUMMARY_PROMPT_FILE)) {
+      const template = readFileSync(SUMMARY_PROMPT_FILE, 'utf8').trim()
+      if (template.length > 0) return template
+    }
+  } catch (e) {
+    console.warn('[summary] Failed to read prompt template file, using default:', e.message)
+  }
+  return DEFAULT_SUMMARY_PROMPT
+}
+
+// Seed the prompt file on startup if it doesn't exist yet
+try {
+  if (!existsSync(SUMMARY_PROMPT_FILE)) {
+    writeFileSync(SUMMARY_PROMPT_FILE, DEFAULT_SUMMARY_PROMPT, 'utf8')
+    console.log(`[summary] Created default prompt template at ${SUMMARY_PROMPT_FILE}`)
+  } else {
+    console.log(`[summary] Using prompt template from ${SUMMARY_PROMPT_FILE}`)
+  }
+} catch (e) {
+  console.warn(`[summary] Could not write default prompt template: ${e.message}`)
+}
+
 async function generateCountryBullets(byZone, totalAlerts, cycleInfo, events, force = false) {
   const cached = summaryCache.get(cycleInfo.cacheKey)
   if (cached && !force) return cached.bullets
@@ -288,20 +374,14 @@ async function generateCountryBullets(byZone, totalAlerts, cycleInfo, events, fo
     ? `\n- לכל מטח רב-אזורי (מהרשימה למעלה), הקדש נקודה נפרדת אחת. ציין את השעה, מספר האזורים שנפגעו, ושמות האזורים. אל תאחד מטחים שונים לנקודה אחת.`
     : ''
 
-  const prompt = `אתה כתב חדשות ביטחוני ישראלי. כתוב סיכום קצר של אירועי ההתרעה שהתקבלו ${period}.
-
-נתוני התרעות לפי אזור:
-${zoneSummaries}
-
-סה"כ: ${totalAlerts} התרעות ב-${zonesSorted.length} אזורים.${salvoSection}
-
-כתוב 7-8 נקודות תמציתיות בעברית בסגנון עדכון חדשותי (לא יבש, אבל מקצועי):
-- התמקד ברמת אזורים (zones), לא בשמות ישובים בודדים
-- ציין מספרים, שעות שיא, וסוגי התרעות
-- אם יש דפוסים מעניינים (אזור שנפגע חזק, שעות מרוכזות, סוג חריג) — ציין
-- אם היה שקט יחסית — ציין גם את זה${salvoInstruction}
-- כל נקודה בשורה נפרדת שמתחילה ב-•
-- ללא כותרת, רק הנקודות עצמן`
+  const promptTemplate = loadSummaryPromptTemplate()
+  const prompt = promptTemplate
+    .replace(/\{\{period\}\}/g, period)
+    .replace(/\{\{zoneSummaries\}\}/g, zoneSummaries)
+    .replace(/\{\{totalAlerts\}\}/g, String(totalAlerts))
+    .replace(/\{\{zoneCount\}\}/g, String(zonesSorted.length))
+    .replace(/\{\{salvoSection\}\}/g, salvoSection)
+    .replace(/\{\{salvoInstruction\}\}/g, salvoInstruction)
 
   if (geminiModel) {
     try {
@@ -1859,6 +1939,254 @@ app.get('/history.json', (req, res) => {
   const offset = Math.max(0, parseInt(req.query.offset ?? '0', 10) || 0)
   const limit  = Math.max(0, parseInt(req.query.limit  ?? '0', 10) || 0)
   res.json(limit > 0 ? all.slice(offset, offset + limit) : all)
+})
+
+// ── Prompt editor (admin-only) ─────────────────────────────────────────────
+
+app.use(express.urlencoded({ extended: false }))
+
+app.post('/prompt/login', (req, res) => {
+  if (!ADMIN_PASSWORD) return res.status(503).send('Admin password not configured')
+  if (req.body?.password !== ADMIN_PASSWORD) {
+    return res.redirect('/prompt?error=1')
+  }
+  const token = signToken(ADMIN_PASSWORD)
+  res.setHeader('Set-Cookie', `${ADMIN_COOKIE}=${token}; HttpOnly; SameSite=Strict; Max-Age=${COOKIE_MAX_AGE}; Path=/`)
+  res.redirect('/prompt')
+})
+
+app.post('/prompt/logout', (req, res) => {
+  res.setHeader('Set-Cookie', `${ADMIN_COOKIE}=; HttpOnly; SameSite=Strict; Max-Age=0; Path=/`)
+  res.redirect('/prompt')
+})
+
+app.post('/prompt/save', (req, res) => {
+  if (!ADMIN_PASSWORD || !isAdmin(req)) return res.status(401).send('Unauthorized')
+  const newPrompt = (req.body?.prompt || '').trim()
+  if (!newPrompt) return res.redirect('/prompt?error=empty')
+  try {
+    writeFileSync(SUMMARY_PROMPT_FILE, newPrompt, 'utf8')
+    console.log(`[prompt] Admin updated prompt template (${newPrompt.length} chars)`)
+    res.redirect('/prompt?saved=1')
+  } catch (e) {
+    console.error('[prompt] Failed to save:', e.message)
+    res.redirect('/prompt?error=save')
+  }
+})
+
+app.post('/prompt/reset', (req, res) => {
+  if (!ADMIN_PASSWORD || !isAdmin(req)) return res.status(401).send('Unauthorized')
+  try {
+    writeFileSync(SUMMARY_PROMPT_FILE, DEFAULT_SUMMARY_PROMPT, 'utf8')
+    console.log('[prompt] Admin reset prompt to default')
+    res.redirect('/prompt?reset=1')
+  } catch (e) {
+    console.error('[prompt] Failed to reset:', e.message)
+    res.redirect('/prompt?error=save')
+  }
+})
+
+app.post('/prompt/test', async (req, res) => {
+  if (!ADMIN_PASSWORD || !isAdmin(req)) return res.status(401).json({ error: 'Unauthorized' })
+  try {
+    const cycleInfo = getCurrentCycle()
+    const { byZone, totalAlerts, events } = aggregateAlertsByZone(cycleInfo.start, cycleInfo.end)
+    if (totalAlerts === 0) {
+      return res.json({ title: cycleInfo.title, cycle: cycleInfo.cycle, totalAlerts: 0, bullets: [], prompt: '', message: 'No alerts in current cycle' })
+    }
+    // Build the prompt so we can return it for inspection
+    const zonesSorted = Object.entries(byZone)
+      .map(([zone, types]) => ({ zone, types, total: Object.values(types).reduce((s, a) => s + a.length, 0) }))
+      .sort((a, b) => b.total - a.total)
+    const zoneSummaries = zonesSorted.slice(0, 15).map(({ zone, types, total }) => {
+      const typeDetails = Object.entries(types).map(([t, alerts]) => {
+        const label = TYPE_LABELS_HE[t] || t
+        const times = alerts.map(a => a.time).join(', ')
+        return `${label}: ${alerts.length} (${times})`
+      }).join('; ')
+      return `${zone}: סה"כ ${total} — ${typeDetails}`
+    }).join('\n')
+    const salvos = detectSimultaneousSalvos(events)
+    let salvoSection = ''
+    if (salvos.length > 0) {
+      const salvoLines = salvos.map(s =>
+        `בשעה ${s.time}: ${s.count} התרעות (${s.types.join(', ')}) ב-${s.zones.length} אזורים בו-זמנית — ${s.zones.join(', ')}`
+      ).join('\n')
+      salvoSection = `\n\nמטחים רב-אזוריים (התרעות בו-זמניות ביותר מאזור אחד תוך 20 דקות):\n${salvoLines}`
+    }
+    const period = cycleInfo.cycle === 'night' ? 'הלילה (18:00-06:00)' : 'היום (06:00-18:00)'
+    const salvoInstruction = salvos.length > 0
+      ? `\n- לכל מטח רב-אזורי (מהרשימה למעלה), הקדש נקודה נפרדת אחת. ציין את השעה, מספר האזורים שנפגעו, ושמות האזורים. אל תאחד מטחים שונים לנקודה אחת.`
+      : ''
+    const promptTemplate = loadSummaryPromptTemplate()
+    const builtPrompt = promptTemplate
+      .replace(/\{\{period\}\}/g, period)
+      .replace(/\{\{zoneSummaries\}\}/g, zoneSummaries)
+      .replace(/\{\{totalAlerts\}\}/g, String(totalAlerts))
+      .replace(/\{\{zoneCount\}\}/g, String(zonesSorted.length))
+      .replace(/\{\{salvoSection\}\}/g, salvoSection)
+      .replace(/\{\{salvoInstruction\}\}/g, salvoInstruction)
+
+    const bullets = await generateCountryBullets(byZone, totalAlerts, cycleInfo, events, true)
+    console.log(`[prompt/test] Admin tested prompt — ${bullets.length} bullets for ${cycleInfo.cacheKey}`)
+    res.json({ title: cycleInfo.title, cycle: cycleInfo.cycle, totalAlerts, bullets, prompt: builtPrompt })
+  } catch (e) {
+    console.error('[prompt/test] error:', e.message)
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.get('/prompt', (req, res) => {
+  const authed = ADMIN_PASSWORD && isAdmin(req)
+  const currentPrompt = authed ? loadSummaryPromptTemplate() : ''
+  const placeholders = ['{{period}}', '{{zoneSummaries}}', '{{totalAlerts}}', '{{zoneCount}}', '{{salvoSection}}', '{{salvoInstruction}}']
+  const error = req.query.error
+  const saved = req.query.saved
+  const reset = req.query.reset
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(`<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prompt Editor — RedAlert Relay</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+  body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; line-height: 1.6 }
+  .page { max-width: 760px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem }
+  h1 { font-size: 1.5rem; font-weight: 800; color: #f8fafc; margin-bottom: .5rem }
+  h1 span { color: #f87171 }
+  .subtitle { font-size: .85rem; color: #64748b; margin-bottom: 2rem }
+  .card { background: #111827; border: 1px solid #334155; border-radius: 1rem; padding: 2rem; margin-bottom: 1.5rem }
+  label { font-size: .85rem; font-weight: 600; color: #94a3b8; display: block; margin-bottom: .5rem }
+  input[type=password] { width: 100%; padding: .6rem 1rem; background: #1e293b; color: #e2e8f0;
+    border: 1px solid #334155; border-radius: .5rem; font-size: 1rem; direction: ltr }
+  input[type=password]:focus { outline: none; border-color: #3b82f6 }
+  textarea { width: 100%; min-height: 360px; padding: 1rem; background: #1e293b; color: #e2e8f0;
+    border: 1px solid #334155; border-radius: .5rem; font-size: .88rem; font-family: monospace;
+    line-height: 1.6; resize: vertical; direction: rtl }
+  textarea:focus { outline: none; border-color: #3b82f6 }
+  .btn-row { display: flex; gap: .75rem; flex-wrap: wrap; margin-top: 1rem }
+  .btn { padding: .55rem 1.2rem; border-radius: .5rem; font-size: .85rem; font-weight: 600;
+    border: none; cursor: pointer; transition: opacity .15s }
+  .btn:hover { opacity: .85 }
+  .btn-primary { background: #1d4ed8; color: #fff }
+  .btn-danger { background: #7f1d1d; color: #fca5a5; border: 1px solid #991b1b }
+  .btn-secondary { background: #1e293b; color: #cbd5e1; border: 1px solid #334155 }
+  .btn-accent { background: #065f46; color: #6ee7b7; border: 1px solid #059669 }
+  .alert { padding: .75rem 1rem; border-radius: .5rem; font-size: .88rem; margin-bottom: 1.5rem }
+  .alert-error { background: #7f1d1d33; border: 1px solid #991b1b; color: #fca5a5 }
+  .alert-success { background: #14532d33; border: 1px solid #166534; color: #86efac }
+  .placeholders { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .5rem }
+  .chip { font-family: monospace; font-size: .75rem; background: #1e293b;
+    border: 1px solid #334155; border-radius: .3rem; padding: .2rem .55rem; color: #a5b4fc; direction: ltr }
+  .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem }
+  .logout-form { display: inline }
+</style>
+</head>
+<body>
+<div class="page">
+${!ADMIN_PASSWORD ? `
+  <h1>⚠️ Prompt Editor <span>Disabled</span></h1>
+  <div class="card"><p>Set the <code style="background:#1e293b;border:1px solid #334155;border-radius:.3rem;padding:.1rem .35rem;font-size:.88em;color:#93c5fd;direction:ltr">ADMIN_PASSWORD</code> environment variable to enable the prompt editor.</p></div>
+` : !authed ? `
+  <h1>🔐 Prompt Editor</h1>
+  <p class="subtitle">Log in to edit the Gemini summary prompt template</p>
+  ${error === '1' ? '<div class="alert alert-error">Incorrect password</div>' : ''}
+  <div class="card">
+    <form method="POST" action="/prompt/login">
+      <label for="password">Admin Password</label>
+      <input type="password" id="password" name="password" autofocus required placeholder="Enter admin password…">
+      <div class="btn-row"><button type="submit" class="btn btn-primary">Log In</button></div>
+    </form>
+  </div>
+` : `
+  <div class="top-bar">
+    <h1>✏️ Prompt <span>Editor</span></h1>
+    <form method="POST" action="/prompt/logout" class="logout-form">
+      <button type="submit" class="btn btn-secondary">Log Out</button>
+    </form>
+  </div>
+  <p class="subtitle">Edit the Gemini LLM prompt template. Changes take effect on the next summary generation — no restart needed.</p>
+  ${saved ? '<div class="alert alert-success">✓ Prompt saved successfully</div>' : ''}
+  ${reset ? '<div class="alert alert-success">✓ Prompt reset to default</div>' : ''}
+  ${error === 'empty' ? '<div class="alert alert-error">Prompt cannot be empty</div>' : ''}
+  ${error === 'save' ? '<div class="alert alert-error">Failed to save prompt to disk</div>' : ''}
+  <div class="card">
+    <form method="POST" action="/prompt/save">
+      <label for="prompt">Prompt Template</label>
+      <textarea id="prompt" name="prompt">${currentPrompt.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>
+      <div style="margin-top:.75rem">
+        <label>Available placeholders</label>
+        <div class="placeholders">
+          ${placeholders.map(p => `<span class="chip">${p}</span>`).join('')}
+        </div>
+      </div>
+      <div class="btn-row">
+        <button type="submit" class="btn btn-primary">💾 Save Prompt</button>
+      </div>
+    </form>
+    <form method="POST" action="/prompt/reset" style="margin-top:.75rem"
+      onsubmit="return confirm('Reset prompt to the built-in default? This will overwrite your current prompt.')">
+      <button type="submit" class="btn btn-danger">↺ Reset to Default</button>
+    </form>
+  </div>
+  <div class="card">
+    <label>Test Current Prompt</label>
+    <p style="font-size:.82rem;color:#64748b;margin-bottom:1rem">Generate a bulletin using the saved prompt and the last 12-hour cycle (day or night). This calls Gemini with <code style="background:#1e293b;border:1px solid #334155;border-radius:.3rem;padding:.1rem .35rem;font-size:.88em;color:#93c5fd">force=true</code>, bypassing the cache.</p>
+    <button type="button" class="btn btn-accent" id="testBtn" onclick="testPrompt()">🚀 Generate Bulletin</button>
+    <div id="testResult" style="display:none;margin-top:1.25rem">
+      <div id="testMeta" style="font-size:.82rem;color:#94a3b8;margin-bottom:.75rem"></div>
+      <div id="testBullets" style="background:#1e293b;border:1px solid #334155;border-radius:.5rem;padding:1rem 1.2rem;font-size:.92rem;line-height:1.8;direction:rtl;white-space:pre-wrap"></div>
+      <details style="margin-top:1rem">
+        <summary style="font-size:.82rem;color:#64748b;cursor:pointer">Show full prompt sent to Gemini</summary>
+        <pre id="testPromptText" style="margin-top:.5rem;background:#0d1117;border:1px solid #334155;border-radius:.5rem;padding:1rem;font-size:.78rem;color:#86efac;white-space:pre-wrap;direction:rtl;max-height:400px;overflow-y:auto"></pre>
+      </details>
+    </div>
+  </div>
+  <script>
+  async function testPrompt() {
+    const btn = document.getElementById('testBtn')
+    const result = document.getElementById('testResult')
+    const meta = document.getElementById('testMeta')
+    const bullets = document.getElementById('testBullets')
+    const promptText = document.getElementById('testPromptText')
+    btn.disabled = true
+    btn.textContent = '⏳ Generating…'
+    result.style.display = 'none'
+    try {
+      const res = await fetch('/prompt/test', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Request failed')
+      if (data.totalAlerts === 0) {
+        meta.textContent = data.title + ' — No alerts in this cycle'
+        bullets.textContent = data.message || 'No alerts found'
+        promptText.textContent = ''
+      } else {
+        meta.textContent = data.title + ' — ' + data.totalAlerts + ' alerts, ' + data.bullets.length + ' bullets'
+        bullets.innerHTML = data.bullets.map(function(b) {
+          var s = b.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+          return s.replace(/\\*\\*(.+?)\\*\\*/g, function(m, p1) { return '<strong style="color:#f8fafc">' + p1 + '</strong>' })
+        }).join('<br>')
+        promptText.textContent = data.prompt
+      }
+      result.style.display = 'block'
+    } catch (e) {
+      meta.textContent = ''
+      bullets.textContent = '❌ Error: ' + e.message
+      promptText.textContent = ''
+      result.style.display = 'block'
+    } finally {
+      btn.disabled = false
+      btn.textContent = '🚀 Generate Bulletin'
+    }
+  }
+  </script>
+`}
+</div>
+</body>
+</html>`)
 })
 
 // Health / status endpoint

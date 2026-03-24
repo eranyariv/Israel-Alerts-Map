@@ -1,6 +1,6 @@
 properties:
   template:
-    revisionSuffix: v1-28b
+    revisionSuffix: v1-32
     containers:
       - name: redalert-relay
         image: redalertrelay.azurecr.io/redalert-relay:latest
@@ -14,6 +14,8 @@ properties:
             secretRef: ra-http-key
           - name: GEMINI_API_KEY
             secretRef: gemini-api-key
+          - name: ADMIN_PASSWORD
+            secretRef: admin-password
         volumeMounts:
           - volumeName: relay-data
             mountPath: /data
