@@ -462,6 +462,10 @@ function generateFallbackBullets(byZone, zonesSorted, totalAlerts, cycleInfo, sa
   return bullets
 }
 
+// How long an alert can stay "active" before being auto-closed (ms).
+// Guards against missed endAlert events during websocket disconnects.
+const ALERT_STALE_MS = (parseInt(process.env.ALERT_STALE_MINUTES, 10) || 20) * 60 * 1000
+
 // Map of type → { type, title, cities, startedAt }
 // Keyed by alert type string (e.g. 'missiles', 'newsFlash')
 const activeAlerts = new Map()
@@ -489,6 +493,10 @@ try {
   if (e.code !== 'ENOENT') console.warn('[history] could not load persisted history:', e.message)
 }
 
+// Immediately reap any alerts that were already stale when we started
+// (defined below, but hoisted — runs after saveHistory is also defined)
+queueMicrotask(() => reapStaleAlerts())
+
 // Debounced write — batches rapid city-merge updates into one write
 let _saveTimer = null
 function saveHistory() {
@@ -503,6 +511,44 @@ function saveHistory() {
     })
   }, 500)
 }
+
+// ── Stale alert cleanup ───────────────────────────────────────────────────
+// Periodically close alerts that have been "active" longer than ALERT_STALE_MS.
+// This prevents ghost entries when the upstream endAlert event is missed.
+
+function reapStaleAlerts() {
+  const now   = Date.now()
+  const nowTs = new Date(now).toISOString()
+  let closed  = 0
+
+  for (const [type, entry] of activeAlerts) {
+    const lastTs = new Date(entry._lastUpdate || entry.startedAt).getTime()
+    if (now - lastTs >= ALERT_STALE_MS) {
+      activeAlerts.delete(type)
+      const histEntry = alertHistory.findLast(e => e.type === type && !e.endedAt)
+      if (histEntry) histEntry.endedAt = nowTs
+      closed++
+    }
+  }
+
+  // Also close any orphaned history entries with no matching activeAlerts entry
+  for (const e of alertHistory) {
+    if (!e.endedAt && !activeAlerts.has(e.type)) {
+      const lastTs = new Date(e.startedAt).getTime()
+      if (now - lastTs >= ALERT_STALE_MS) {
+        e.endedAt = nowTs
+        closed++
+      }
+    }
+  }
+
+  if (closed > 0) {
+    saveHistory()
+    console.log(`[reap] auto-closed ${closed} stale alert(s) (threshold: ${ALERT_STALE_MS / 60000}min)`)
+  }
+}
+
+setInterval(reapStaleAlerts, 60_000) // check every minute
 
 // Raw event log — every WebSocket message as received, no merging, kept for 31 days
 const rawEventLog = []
