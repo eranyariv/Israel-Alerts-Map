@@ -56,21 +56,28 @@ function RelayStatus({ wsConnected, relayHealth, mode }) {
 }
 
 function ModeSwitch({ mode, onChange }) {
+  const liveRef = React.useRef(null)
+  const histRef = React.useRef(null)
+  const [indicator, setIndicator] = React.useState({ left: 0, width: 0 })
+
+  React.useEffect(() => {
+    const el = mode === 'live' ? liveRef.current : histRef.current
+    if (!el) return
+    setIndicator({ left: el.offsetLeft, width: el.offsetWidth })
+  }, [mode])
+
   return (
     <div dir="ltr" className="relative flex bg-slate-900/60 rounded-full p-0.5 border border-slate-600/80 shrink-0">
-      {/* Sliding indicator — rendered in LTR to avoid RTL positioning issues */}
       <div
         className={`absolute top-0.5 bottom-0.5 rounded-full transition-all duration-200 ease-out
           ${mode === 'live'
             ? 'bg-red-600 shadow-lg shadow-red-600/30'
             : 'bg-blue-600 shadow-lg shadow-blue-600/30'
           }`}
-        style={{
-          width: 'calc(50% - 2px)',
-          left: mode === 'live' ? '2px' : 'calc(50%)',
-        }}
+        style={{ left: indicator.left, width: indicator.width }}
       />
       <button
+        ref={liveRef}
         onClick={() => onChange('live')}
         className={`relative z-10 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors duration-200 press-effect ${
           mode === 'live' ? 'text-white' : 'text-slate-400 hover:text-slate-200'
@@ -82,6 +89,7 @@ function ModeSwitch({ mode, onChange }) {
         חי
       </button>
       <button
+        ref={histRef}
         onClick={() => onChange('history')}
         className={`relative z-10 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors duration-200 press-effect ${
           mode === 'history' ? 'text-white' : 'text-slate-400 hover:text-slate-200'
