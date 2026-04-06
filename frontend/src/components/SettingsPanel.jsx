@@ -65,10 +65,17 @@ export default function SettingsPanel({
   locationDenied,
 }) {
   useEffect(() => {
-    const handler = (e) => { if (e.key === 'Escape') onClose() }
+    const handler = (e) => { if (e.key === 'Escape') handleClose() }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [onClose])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [exiting, setExiting] = useState(false)
+
+  const handleClose = () => {
+    setExiting(true)
+    setTimeout(() => { setExiting(false); onClose() }, 200)
+  }
 
   if (!isOpen) return null
 
@@ -76,20 +83,20 @@ export default function SettingsPanel({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className={`absolute inset-0 bg-black/60 backdrop-blur-sm ${exiting ? 'modal-backdrop-exit' : 'modal-backdrop-enter'}`} onClick={handleClose} />
 
-      <div className="relative bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl w-[min(380px,calc(100vw-2rem))] max-h-[calc(100dvh-4rem)] flex flex-col" dir="rtl">
+      <div className={`relative bg-slate-800/95 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl w-[min(380px,calc(100vw-2rem))] max-h-[calc(100dvh-4rem)] flex flex-col ${exiting ? 'modal-exit' : 'modal-enter'}`} dir="rtl">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3.5 border-b border-slate-700 shrink-0">
+        <div className="flex items-center justify-between px-4 py-3.5 border-b border-slate-700/60 shrink-0">
           <h2 className="text-base font-bold text-white">הגדרות</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-700 transition-colors">
+          <button onClick={handleClose} className="p-1.5 rounded-lg hover:bg-slate-700 transition-colors press-effect focus-ring">
             <X size={18} className="text-slate-400" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="overflow-y-auto flex-1 p-4 space-y-6">
+        <div className="overflow-y-auto flex-1 p-4 space-y-6 panel-content-enter">
 
           {/* Live alerts in my area */}
           <Section title="התרעות חיות באזורי">
@@ -201,7 +208,7 @@ export default function SettingsPanel({
           {/* Export */}
           <Section title="ייצוא">
             <button
-              onClick={() => { onExportKml?.(); onClose() }}
+              onClick={() => { onExportKml?.(); handleClose() }}
               disabled={!onExportKml}
               className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl border
                          bg-slate-700/30 border-slate-700/50 text-slate-300 hover:bg-slate-700/60

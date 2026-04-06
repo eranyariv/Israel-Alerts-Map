@@ -182,7 +182,7 @@ export default function FilterPanel({ categories, from, to, areas, allAreas, onC
     (!areas || areas.length === 0)
 
   return (
-    <div className="p-4 space-y-5">
+    <div className="p-4 space-y-5 panel-content-enter">
 
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -191,7 +191,7 @@ export default function FilterPanel({ categories, from, to, areas, allAreas, onC
           <span>סינון</span>
         </div>
         {!isDefault && (
-          <button onClick={reset} className="flex items-center gap-1 text-xs text-slate-400 hover:text-white transition-colors">
+          <button onClick={reset} className="flex items-center gap-1 text-xs text-slate-400 hover:text-white transition-colors press-effect focus-ring rounded-lg px-2 py-1">
             <RotateCcw size={12} />
             <span>איפוס</span>
           </button>
@@ -208,10 +208,10 @@ export default function FilterPanel({ categories, from, to, areas, allAreas, onC
               key={type.value}
               onClick={() => toggleCategory(type.value)}
               className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm text-right
-                          transition-all touch-manipulation ${
+                          transition-all duration-150 touch-manipulation press-effect focus-ring ${
                 active
-                  ? 'bg-slate-600 text-white ring-1 ring-white/20'
-                  : 'bg-slate-700/40 text-slate-300 hover:bg-slate-700/70'
+                  ? 'bg-slate-600 text-white ring-1 ring-white/20 shadow-sm'
+                  : 'bg-slate-700/40 text-slate-300 hover:bg-slate-700/70 hover:ring-1 hover:ring-white/5'
               }`}
             >
               <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: catColors[type.value] || CATEGORY_COLORS[type.value] }} />

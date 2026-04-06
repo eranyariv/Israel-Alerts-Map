@@ -15,6 +15,10 @@ export default {
           critical: '#dc2626',
         },
       },
+      animation: {
+        'fade-in': 'panelFadeIn 200ms ease-out both',
+        'shimmer': 'shimmer 1.5s ease-in-out infinite',
+      },
     },
   },
   plugins: [],

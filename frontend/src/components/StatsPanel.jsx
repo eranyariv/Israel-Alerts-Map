@@ -1,4 +1,5 @@
-import { Activity, TrendingUp, TrendingDown, Calendar, Target, Clock, Timer, Layers, GitBranch } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Activity, TrendingUp, TrendingDown, Calendar, Target, Clock, Timer, Layers, GitBranch, ShieldCheck } from 'lucide-react'
 import { CATEGORY_LABELS, getHeatColor } from '../utils/heatmap'
 import { getHourColor } from '../utils/analytics'
 import { format } from 'date-fns'
@@ -19,6 +20,29 @@ function formatMinutes(m) {
   const h = Math.floor(m / 60)
   const mins = m % 60
   return mins > 0 ? `${h}:${String(mins).padStart(2, '0')} שע'` : `${h} שע'`
+}
+
+function AnimatedNumber({ value, duration = 500 }) {
+  const [display, setDisplay] = useState(value)
+  const prevRef = useRef(value)
+
+  useEffect(() => {
+    const from = prevRef.current
+    const to = value
+    prevRef.current = value
+    if (from === to) return
+    const start = performance.now()
+    const step = (now) => {
+      const elapsed = now - start
+      const progress = Math.min(elapsed / duration, 1)
+      const eased = 1 - Math.pow(1 - progress, 3)
+      setDisplay(Math.round(from + (to - from) * eased))
+      if (progress < 1) requestAnimationFrame(step)
+    }
+    requestAnimationFrame(step)
+  }, [value, duration])
+
+  return <span className="count-pop">{display.toLocaleString()}</span>
 }
 
 function CityRow({ rank, city, count, maxCount, barColor, onAreaClick }) {
@@ -150,7 +174,7 @@ function ViewToggle({ historyView, onHistoryViewChange }) {
 function NoData() {
   return (
     <div className="text-center text-slate-400 py-4 space-y-2">
-      <div className="text-3xl">🛡️</div>
+      <ShieldCheck size={32} className="mx-auto text-slate-500" />
       <div className="text-sm text-slate-300">אין נתונים לטווח זה</div>
     </div>
   )
@@ -159,9 +183,12 @@ function NoData() {
 export default function StatsPanel({ heatmapData, loading, filters, onAreaClick, historyView = 'heatmap', onHistoryViewChange, realizationData = {}, computeRealization, realizationProgress, catColors = {}, peakHoursData = {}, durationData = {}, simultaneousData = {}, sequenceData = {} }) {
   if (loading) {
     return (
-      <div className="p-4 space-y-2">
-        {[1, 2, 3, 4, 5].map(i => (
-          <div key={i} className="h-10 bg-slate-700/50 rounded-lg animate-pulse" />
+      <div className="p-4 space-y-3">
+        <div className="h-10 skeleton-shimmer rounded-lg" />
+        <div className="h-16 skeleton-shimmer rounded-xl" />
+        <div className="h-10 skeleton-shimmer rounded-lg" />
+        {[1, 2, 3, 4].map(i => (
+          <div key={i} className="h-8 skeleton-shimmer rounded-lg" />
         ))}
       </div>
     )
@@ -202,7 +229,7 @@ export default function StatsPanel({ heatmapData, loading, filters, onAreaClick,
   const maxHourBin = Math.max(...overallHourBins, 1)
 
   return (
-    <div className="p-4 space-y-5">
+    <div className="p-4 space-y-5 panel-content-enter">
 
       {/* View toggle dropdown */}
       {onHistoryViewChange && (
@@ -237,7 +264,7 @@ export default function StatsPanel({ heatmapData, loading, filters, onAreaClick,
               </>
             ) : (
               <>
-                <div className="text-3xl">📊</div>
+                <Target size={32} className="mx-auto text-slate-500" />
                 <div className="text-sm text-slate-300">חישוב מימוש התרעה מקדימה</div>
                 <div className="text-xs text-slate-500">ניתוח התרעות מקדימות מול אירועים אמיתיים</div>
                 {computeRealization && (
@@ -271,7 +298,7 @@ export default function StatsPanel({ heatmapData, loading, filters, onAreaClick,
               <div>
                 <div className="text-xs text-slate-400">מימוש כללי</div>
                 <div className="text-xl font-bold" style={{ color: `hsl(${overallHue}, 85%, 55%)` }}>
-                  {overallPct}%
+                  <AnimatedNumber value={overallPct} />%
                 </div>
                 <div className="text-xs text-slate-400 mt-0.5">
                   {totalCorrect} מתוך {totalNF} התרעות מקדימות מומשו
@@ -461,7 +488,7 @@ export default function StatsPanel({ heatmapData, loading, filters, onAreaClick,
               <div>
                 <div className="text-xs text-slate-400">שיא בו-זמניות</div>
                 <div className="text-xl font-bold text-white">
-                  {peakCount}
+                  <AnimatedNumber value={peakCount} />
                   <span className="text-sm text-slate-400 mr-1">אזורים</span>
                 </div>
                 {peakTime && (
@@ -519,7 +546,7 @@ export default function StatsPanel({ heatmapData, loading, filters, onAreaClick,
               <div>
                 <div className="text-xs text-slate-400">מסדרונות התרעה</div>
                 <div className="text-xl font-bold text-white">
-                  {pairs.length}
+                  <AnimatedNumber value={pairs.length} />
                   <span className="text-sm text-slate-400 mr-1">צירים</span>
                 </div>
                 <div className="text-xs text-slate-400 mt-0.5">
@@ -590,7 +617,7 @@ export default function StatsPanel({ heatmapData, loading, filters, onAreaClick,
             <div>
               <div className="text-xs text-slate-400">בטווח הנבחר</div>
               <div className="text-xl font-bold text-white">
-                {total}
+                <AnimatedNumber value={total} />
                 <span className="text-sm text-slate-400 mr-1">התרעות</span>
               </div>
               {lastAlertDate && (

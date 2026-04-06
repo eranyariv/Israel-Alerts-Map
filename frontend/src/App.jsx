@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { RefreshCw, SlidersHorizontal, BarChart2, Shield, Settings, ScrollText, Share2, Download, Bell, X, MapPin } from 'lucide-react'
+import { RefreshCw, SlidersHorizontal, BarChart2, Shield, Settings, ScrollText, Share2, Download, Bell, X, MapPin, Film, Check } from 'lucide-react'
 import { formatTime } from './utils/dateFormat'
 import { ALL_CATEGORIES, CATEGORY_COLORS } from './utils/heatmap'
 
@@ -57,22 +57,31 @@ function RelayStatus({ wsConnected, relayHealth, mode }) {
 
 function ModeSwitch({ mode, onChange }) {
   return (
-    <div className="flex bg-slate-900/60 rounded-full p-0.5 border border-slate-600 shrink-0">
+    <div className="relative flex bg-slate-900/60 rounded-full p-0.5 border border-slate-600/80 shrink-0">
+      {/* Sliding indicator */}
+      <div
+        className={`absolute top-0.5 bottom-0.5 rounded-full transition-all duration-200 ease-out ${
+          mode === 'live'
+            ? 'bg-red-600 shadow-lg shadow-red-600/30 left-0.5 right-1/2'
+            : 'bg-blue-600 shadow-lg shadow-blue-600/30 left-1/2 right-0.5'
+        }`}
+        style={{ width: 'calc(50% - 2px)', transform: mode === 'live' ? 'translateX(0)' : 'translateX(calc(100% + 4px))' }}
+      />
       <button
         onClick={() => onChange('live')}
-        className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all ${
-          mode === 'live' ? 'bg-red-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+        className={`relative z-10 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors duration-200 press-effect ${
+          mode === 'live' ? 'text-white' : 'text-slate-400 hover:text-slate-200'
         }`}
       >
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 transition-colors ${
           mode === 'live' ? 'bg-white animate-pulse' : 'bg-slate-500'
         }`} />
         חי
       </button>
       <button
         onClick={() => onChange('history')}
-        className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all ${
-          mode === 'history' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+        className={`relative z-10 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors duration-200 press-effect ${
+          mode === 'history' ? 'text-white' : 'text-slate-400 hover:text-slate-200'
         }`}
       >
         <BarChart2 size={11} />
@@ -244,6 +253,21 @@ class AppErrorBoundary extends React.Component {
   }
 }
 
+function Toast({ message, visible }) {
+  if (!message) return null
+  return (
+    <div className={`fixed top-5 left-1/2 -translate-x-1/2 z-[200] px-4 py-2.5 rounded-xl
+                     bg-slate-700/95 backdrop-blur-md border border-white/10 shadow-xl
+                     text-sm text-white font-medium flex items-center gap-2
+                     ${visible ? 'toast-enter' : 'toast-exit'}`}
+         dir="rtl"
+    >
+      <Check size={16} className="text-green-400 shrink-0" />
+      {message}
+    </div>
+  )
+}
+
 function AppInner() {
   const [mode,            setMode]            = useState(() => URL_MODE || localStorage.getItem('viewMode') || 'live')
   const [filters,         setFilters]         = useState(() => {
@@ -292,6 +316,8 @@ function AppInner() {
   const [showInstall, setShowInstall] = useState(false)
   const [notifHintDismissed, setNotifHintDismissed] = useState(() => localStorage.getItem('notifHintDismissed') === 'true')
   const [copied, setCopied] = useState(false)
+  const [toastMessage, setToastMessage] = useState(null)
+  const [toastVisible, setToastVisible] = useState(false)
   const autoZoomRef = useRef(!localStorage.getItem('firstVisitZoomed'))
   const [summaryData, setSummaryData] = useState(null)
   const [summaryOpen, setSummaryOpen] = useState(false)
@@ -428,6 +454,13 @@ function AppInner() {
   const summaryBellAnimating = summaryData?.hasEvents && !summaryRead
 
   // Share handler
+  const showToast = useCallback((msg) => {
+    setToastMessage(msg)
+    setToastVisible(true)
+    setTimeout(() => setToastVisible(false), 1800)
+    setTimeout(() => setToastMessage(null), 2200)
+  }, [])
+
   const handleShare = useCallback(async () => {
     trackEvent('share_click')
     const url = 'https://yariv.org/map/'
@@ -435,7 +468,7 @@ function AppInner() {
     if (navigator.share) {
       try { await navigator.share({ title: 'מפת התרעות ישראל', text, url }) } catch {}
     } else {
-      try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000) } catch {}
+      try { await navigator.clipboard.writeText(text); setCopied(true); showToast('הקישור הועתק!'); setTimeout(() => setCopied(false), 2000) } catch {}
     }
   }, [])
 
@@ -783,6 +816,9 @@ function AppInner() {
   return (
     <div className="flex w-screen overflow-hidden font-hebrew bg-slate-900" style={{height:'100dvh'}} dir="rtl">
 
+      {/* Toast notification */}
+      <Toast message={toastMessage} visible={toastVisible} />
+
       {/* Floating progress bar for realization computation */}
       {realizationProgress !== null && (
         <div className="fixed top-0 left-0 right-0 z-50">
@@ -795,7 +831,7 @@ function AppInner() {
       {/* Local alert banner — removed from here, rendered inside <main> instead */}
 
       {/* -- Desktop Sidebar ------------------------------------------------- */}
-      <aside className="hidden md:flex w-80 flex-col bg-slate-800 border-l border-slate-700 z-10 shrink-0" style={{height:'100dvh',overflow:'hidden'}}>
+      <aside className="hidden md:flex w-80 flex-col glass-sidebar border-l z-10 shrink-0" style={{height:'100dvh',overflow:'hidden'}}>
 
         {/* Logo + Refresh */}
         <div className="flex items-center gap-3 px-4 py-4 border-b border-slate-700">
@@ -810,14 +846,14 @@ function AppInner() {
           </div>
           <button
             onClick={handleShare}
-            className="p-2 rounded-xl bg-slate-700 hover:bg-slate-600 transition-colors touch-manipulation relative"
+            className="p-2 rounded-xl bg-slate-700/60 hover:bg-slate-600 transition-all touch-manipulation relative press-effect focus-ring"
             title={copied ? 'הקישור הועתק!' : 'שתף'}
           >
-            <Share2 size={16} className={copied ? 'text-green-400' : 'text-slate-300'} />
+            <Share2 size={16} className={`transition-colors ${copied ? 'text-green-400' : 'text-slate-300'}`} />
           </button>
           <button
             onClick={handleSummaryOpen}
-            className="p-2 rounded-xl bg-slate-700 hover:bg-slate-600 transition-colors touch-manipulation relative"
+            className="p-2 rounded-xl bg-slate-700/60 hover:bg-slate-600 transition-all touch-manipulation relative press-effect focus-ring"
             title={summaryData?.title || 'סיכום'}
           >
             <Bell size={16} className={`text-slate-300 ${summaryBellAnimating ? 'bell-ringing' : ''}`} />
@@ -827,7 +863,7 @@ function AppInner() {
           </button>
           <button
             onClick={() => setSettingsOpen(true)}
-            className="p-2 rounded-xl bg-slate-700 hover:bg-slate-600 transition-colors touch-manipulation"
+            className="p-2 rounded-xl bg-slate-700/60 hover:bg-slate-600 transition-all touch-manipulation press-effect focus-ring"
             title="הגדרות"
           >
             <Settings size={16} className="text-slate-300" />
@@ -837,7 +873,7 @@ function AppInner() {
               onClick={handleRefresh}
               disabled={loading}
               className="p-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50
-                         disabled:cursor-not-allowed transition-colors touch-manipulation"
+                         disabled:cursor-not-allowed transition-all touch-manipulation press-effect focus-ring"
               title="רענן נתונים"
             >
               <RefreshCw size={16} className={`text-white ${loading ? 'animate-spin' : ''}`} />
@@ -855,14 +891,22 @@ function AppInner() {
 
         {/* History tabs — only in history mode */}
         {mode === 'history' && (
-          <div className="flex border-b border-slate-700">
+          <div className="relative flex border-b border-slate-700/60">
+            {/* Sliding indicator */}
+            <div
+              className="absolute bottom-0 h-0.5 bg-blue-400 rounded-full tab-indicator"
+              style={{
+                width: `${100 / HISTORY_TABS.length}%`,
+                transform: `translateX(${HISTORY_TABS.findIndex(t => t.id === sidebarTab) * 100}%)`,
+              }}
+            />
             {HISTORY_TABS.map(({ id, label, Icon }) => (
               <button
                 key={id}
                 onClick={() => setSidebarTab(id)}
-                className={`flex-1 flex flex-col items-center gap-1 py-2.5 text-xs transition-colors ${
+                className={`flex-1 flex flex-col items-center gap-1 py-2.5 text-xs transition-colors duration-200 press-effect focus-ring ${
                   sidebarTab === id
-                    ? 'text-blue-400 border-b-2 border-blue-400'
+                    ? 'text-blue-400'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
@@ -879,8 +923,9 @@ function AppInner() {
         </div>
 
         {mode === 'history' && hasCustomFilters && (
-          <div className="mx-4 mb-4 px-3 py-2 bg-blue-900/30 border border-blue-700
-                          rounded-lg text-xs text-blue-300">
+          <div className="mx-4 mb-4 px-3 py-2 bg-blue-900/20 border border-blue-700/40
+                          rounded-lg text-xs text-blue-300 flex items-center gap-2 panel-content-enter">
+            <span className="w-2 h-2 bg-blue-400 rounded-full animate-pulse shrink-0" />
             פילטר פעיל
           </div>
         )}
@@ -930,8 +975,9 @@ function AppInner() {
         {/* Demo mode badge on map */}
         {demoMode && (
           <div className="absolute top-3 left-3 z-20 hidden md:block">
-            <div className="bg-amber-600/90 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg border border-amber-500">
-              🎬 מצב דמו
+            <div className="bg-amber-600/90 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg border border-amber-500 flex items-center gap-1.5">
+              <Film size={12} />
+              מצב דמו
             </div>
           </div>
         )}
@@ -941,13 +987,13 @@ function AppInner() {
           {demoMode && (
             <div className="flex justify-center">
               <div className="bg-amber-600/90 text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg border border-amber-500">
-                🎬 מצב דמו — ההתרעות לדוגמה בלבד
+                <Film size={12} className="inline mr-1" />מצב דמו — ההתרעות לדוגמה בלבד
               </div>
             </div>
           )}
           <div className="flex items-center gap-2">
-            <div className="flex-1 flex items-center gap-2 bg-slate-800/90 backdrop-blur-sm
-                            px-3 py-2 rounded-full border border-slate-700 shadow-lg min-w-0">
+            <div className="flex-1 flex items-center gap-2 bg-slate-800/85 backdrop-blur-md
+                            px-3 py-2 rounded-full border border-white/5 shadow-lg min-w-0">
               <Shield size={13} className={visibleAlerts.length > 0 ? 'text-red-400' : 'text-green-400'} />
               <span className="text-xs text-slate-300 truncate">
                 {visibleAlerts.length > 0
@@ -959,16 +1005,16 @@ function AppInner() {
             </div>
             <button
               onClick={handleShare}
-              className="w-10 h-10 rounded-full bg-slate-800 shadow-lg flex items-center
-                         justify-center border border-slate-700 touch-manipulation shrink-0"
+              className="w-11 h-11 rounded-full bg-slate-800/85 backdrop-blur-md shadow-lg flex items-center
+                         justify-center border border-white/5 touch-manipulation shrink-0 press-effect focus-ring"
               title={copied ? 'הועתק!' : 'שתף'}
             >
-              <Share2 size={16} className={copied ? 'text-green-400' : 'text-slate-300'} />
+              <Share2 size={16} className={`transition-colors ${copied ? 'text-green-400' : 'text-slate-300'}`} />
             </button>
             <button
               onClick={handleSummaryOpen}
-              className="w-10 h-10 rounded-full bg-slate-800 shadow-lg flex items-center
-                         justify-center border border-slate-700 touch-manipulation shrink-0 relative"
+              className="w-11 h-11 rounded-full bg-slate-800/85 backdrop-blur-md shadow-lg flex items-center
+                         justify-center border border-white/5 touch-manipulation shrink-0 relative press-effect focus-ring"
               title={summaryData?.title || 'סיכום'}
             >
               <Bell size={16} className={`text-slate-300 ${summaryBellAnimating ? 'bell-ringing' : ''}`} />
@@ -978,8 +1024,8 @@ function AppInner() {
             </button>
             <button
               onClick={() => setSettingsOpen(true)}
-              className="w-10 h-10 rounded-full bg-slate-800 shadow-lg flex items-center
-                         justify-center border border-slate-700 touch-manipulation shrink-0"
+              className="w-11 h-11 rounded-full bg-slate-800/85 backdrop-blur-md shadow-lg flex items-center
+                         justify-center border border-white/5 touch-manipulation shrink-0 press-effect focus-ring"
               title="הגדרות"
             >
               <Settings size={16} className="text-slate-300" />
@@ -988,8 +1034,8 @@ function AppInner() {
               <button
                 onClick={handleRefresh}
                 disabled={loading}
-                className="w-10 h-10 rounded-full bg-blue-600 shadow-lg flex items-center
-                           justify-center disabled:opacity-50 touch-manipulation shrink-0"
+                className="w-11 h-11 rounded-full bg-blue-600 shadow-lg flex items-center
+                           justify-center disabled:opacity-50 touch-manipulation shrink-0 press-effect focus-ring"
               >
                 <RefreshCw size={16} className={`text-white ${loading ? 'animate-spin' : ''}`} />
               </button>
@@ -1008,28 +1054,31 @@ function AppInner() {
           <div className="md:hidden absolute left-4 flex flex-col gap-3 z-20" style={{ bottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}>
             <button
               onClick={() => openBottomSheet('stats')}
-              className="w-12 h-12 rounded-full bg-slate-800 shadow-lg flex items-center
-                         justify-center text-slate-300 border border-slate-700 touch-manipulation"
+              className="w-12 h-12 rounded-full bg-slate-800/85 backdrop-blur-md shadow-lg flex items-center
+                         justify-center text-slate-300 border border-white/5 touch-manipulation press-effect focus-ring"
             >
               <BarChart2 size={20} />
             </button>
             <button
               onClick={() => openBottomSheet('events')}
-              className="w-12 h-12 rounded-full bg-slate-800 shadow-lg flex items-center
-                         justify-center text-slate-300 border border-slate-700 touch-manipulation"
+              className="w-12 h-12 rounded-full bg-slate-800/85 backdrop-blur-md shadow-lg flex items-center
+                         justify-center text-slate-300 border border-white/5 touch-manipulation press-effect focus-ring"
             >
               <ScrollText size={20} />
             </button>
             <button
               onClick={() => openBottomSheet('filters')}
               className={`w-12 h-12 rounded-full shadow-lg flex items-center justify-center
-                          touch-manipulation border ${
+                          touch-manipulation border press-effect focus-ring relative ${
                             hasCustomFilters
                               ? 'bg-blue-600 border-blue-500 text-white'
-                              : 'bg-slate-800 border-slate-700 text-slate-300'
+                              : 'bg-slate-800/85 backdrop-blur-md border-white/5 text-slate-300'
                           }`}
             >
               <SlidersHorizontal size={20} />
+              {hasCustomFilters && (
+                <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-blue-400 rounded-full border-2 border-slate-800 animate-pulse" />
+              )}
             </button>
           </div>
         )}
@@ -1040,10 +1089,10 @@ function AppInner() {
             <button
               onClick={() => openBottomSheet('live')}
               className={`w-12 h-12 rounded-full shadow-lg flex items-center justify-center
-                          touch-manipulation border ${
+                          touch-manipulation border press-effect focus-ring ${
                             visibleAlerts.length > 0
-                              ? 'bg-red-600 border-red-500 text-white'
-                              : 'bg-slate-800 border-slate-700 text-slate-300'
+                              ? 'bg-red-600 border-red-500 text-white shadow-red-600/30'
+                              : 'bg-slate-800/85 backdrop-blur-md border-white/5 text-slate-300'
                           }`}
             >
               <span className={`w-3 h-3 rounded-full ${

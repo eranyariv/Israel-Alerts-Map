@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
-import { Clock, MapPin, ChevronDown, ChevronUp, Search, X } from 'lucide-react'
+import { Clock, MapPin, ChevronDown, ChevronUp, Search, X, ClipboardList } from 'lucide-react'
 import { CATEGORY_COLORS, CATEGORY_LABELS } from '../utils/heatmap'
 import { format } from 'date-fns'
 import { he } from 'date-fns/locale'
@@ -47,7 +47,9 @@ function EventRow({ event, onAreaClick, filterAreas, catColors = {} }) {
 
   return (
     <div
-      className="bg-slate-700/40 rounded-xl p-3 space-y-2 cursor-pointer hover:bg-slate-700/60 transition-colors"
+      className="bg-slate-700/40 rounded-xl p-3 space-y-2 cursor-pointer
+                 hover:bg-slate-700/60 hover:ring-1 hover:ring-white/5
+                 transition-all duration-150 press-effect"
       onClick={() => allCities.length > 0 && onAreaClick?.(allCities)}
     >
       {/* Header: category + status */}
@@ -217,7 +219,9 @@ export default function EventsLog({ events, loading, onAreaClick, filterAreas, c
     return (
       <div className="p-4 space-y-2">
         {[1, 2, 3, 4, 5].map(i => (
-          <div key={i} className="h-20 bg-slate-700/50 rounded-xl animate-pulse" />
+          <div key={i} className="rounded-xl overflow-hidden">
+            <div className="h-20 skeleton-shimmer" />
+          </div>
         ))}
       </div>
     )
@@ -226,7 +230,7 @@ export default function EventsLog({ events, loading, onAreaClick, filterAreas, c
   if (!events?.length) {
     return (
       <div className="p-4 text-center text-slate-400 py-8 space-y-2">
-        <div className="text-3xl">📋</div>
+        <ClipboardList size={32} className="mx-auto text-slate-500" />
         <div className="text-sm text-slate-300">אין אירועים בטווח הנבחר</div>
       </div>
     )
@@ -248,7 +252,7 @@ export default function EventsLog({ events, loading, onAreaClick, filterAreas, c
     : filterAreas
 
   return (
-    <div className="p-4 space-y-3">
+    <div className="p-4 space-y-3 panel-content-enter">
       <AreaSearch allAreas={allAreas} value={searchArea} onChange={setSearchArea} />
       <div className="flex items-center justify-between">
         <div className="text-xs text-slate-400 font-semibold">

@@ -16,7 +16,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Leaflet overrides */
+/* ── Leaflet overrides ── */
 .leaflet-container {
   width: 100%;
   height: 100%;
@@ -24,14 +24,25 @@ body {
   font-family: 'Assistant', sans-serif;
 }
 
+/* Glassmorphic tooltips */
 .leaflet-tooltip {
   direction: rtl;
   font-family: 'Assistant', sans-serif;
   font-size: 13px;
-  border-radius: 8px;
-  border: none;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+  background: rgba(15, 23, 42, 0.88) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  padding: 8px 12px;
+  color: #e2e8f0 !important;
+  animation: tooltipIn 150ms ease-out;
+}
+
+@keyframes tooltipIn {
+  from { opacity: 0; transform: scale(0.95) translateY(4px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
 }
 
 .leaflet-control-zoom {
@@ -54,55 +65,164 @@ body {
   text-align: center;
 }
 
-/* Scrollbar */
+/* ── Scrollbar — auto-hide style ── */
 ::-webkit-scrollbar {
-  width: 5px;
+  width: 3px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #1e293b;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #475569;
+  background: rgba(71, 85, 105, 0);
   border-radius: 4px;
+  transition: background 0.3s;
 }
 
-/* Bottom sheet animation */
-.bottom-sheet-enter {
-  transform: translateY(100%);
+*:hover > ::-webkit-scrollbar-thumb,
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
 }
 
-.bottom-sheet-enter-active {
-  transform: translateY(0);
-  transition: transform 300ms ease-out;
+/* ── Panel content transitions ── */
+.panel-content-enter {
+  animation: panelFadeIn 200ms ease-out both;
 }
 
-.bottom-sheet-exit-active {
-  transform: translateY(100%);
-  transition: transform 300ms ease-in;
+@keyframes panelFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Staggered list item animation */
+.stagger-item {
+  animation: staggerIn 250ms ease-out both;
+}
+
+@keyframes staggerIn {
+  from { opacity: 0; transform: translateX(8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ── Alert banner slide ── */
+@keyframes alertSlideDown {
+  from { transform: translateY(-100%); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes alertSlideUp {
+  from { transform: translateY(0); opacity: 1; }
+  to   { transform: translateY(-100%); opacity: 0; }
+}
+
+.alert-banner-enter {
+  animation: alertSlideDown 300ms ease-out both;
+}
+
+.alert-banner-exit {
+  animation: alertSlideUp 250ms ease-in both;
 }
 
 /* Alert pulse animation */
 @keyframes alertPulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
+  50% { opacity: 0.7; }
 }
 
 .alert-pulse {
-  animation: alertPulse 1s ease-in-out infinite;
+  animation: alertPulse 1.5s ease-in-out infinite;
 }
 
-/* Dark popup */
+/* Alert banner glow */
+.alert-banner-glow {
+  box-shadow: 0 4px 24px rgba(239, 68, 68, 0.3);
+}
+
+/* ── Bottom sheet ── */
+@keyframes sheetSlideUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+@keyframes sheetSlideDown {
+  from { transform: translateY(0); }
+  to   { transform: translateY(100%); }
+}
+
+@keyframes backdropFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes backdropFadeOut {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+.bottom-sheet-backdrop-enter {
+  animation: backdropFadeIn 250ms ease-out both;
+}
+
+.bottom-sheet-backdrop-exit {
+  animation: backdropFadeOut 200ms ease-in both;
+}
+
+.bottom-sheet-enter {
+  animation: sheetSlideUp 350ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.bottom-sheet-exit {
+  animation: sheetSlideDown 250ms ease-in both;
+}
+
+/* ── Modal animations ── */
+@keyframes modalFadeIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes modalFadeOut {
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(0.95); }
+}
+
+.modal-enter {
+  animation: modalFadeIn 250ms ease-out both;
+}
+
+.modal-exit {
+  animation: modalFadeOut 200ms ease-in both;
+}
+
+.modal-backdrop-enter {
+  animation: backdropFadeIn 250ms ease-out both;
+}
+
+.modal-backdrop-exit {
+  animation: backdropFadeOut 200ms ease-in both;
+}
+
+/* ── Glassmorphism sidebar ── */
+.glass-sidebar {
+  background: rgba(30, 41, 59, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-color: rgba(255,255,255,0.05);
+}
+
+/* ── Dark popup (glassmorphic) ── */
 .leaflet-popup-content-wrapper {
-  background: #1e293b !important;
-  border: 1px solid #334155 !important;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.6) !important;
-  border-radius: 12px !important;
+  background: rgba(15, 23, 42, 0.92) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.5) !important;
+  border-radius: 14px !important;
 }
 
 .leaflet-popup-tip {
-  background: #1e293b !important;
+  background: rgba(15, 23, 42, 0.92) !important;
 }
 
 .leaflet-popup-close-button {
@@ -110,6 +230,7 @@ body {
   font-size: 18px !important;
   top: 6px !important;
   right: 8px !important;
+  transition: color 150ms;
 }
 
 .leaflet-popup-close-button:hover {
@@ -121,7 +242,7 @@ body {
   color: #e2e8f0;
 }
 
-/* Bell ringing animation for summary bulletin */
+/* ── Bell ringing animation ── */
 @keyframes bellRing {
   0%, 100% { transform: rotate(0deg); }
   10% { transform: rotate(14deg); }
@@ -139,7 +260,7 @@ body {
   transform-origin: top center;
 }
 
-/* User location marker */
+/* ── User location marker ── */
 .user-location-marker {
   position: relative;
   width: 16px;
@@ -178,9 +299,97 @@ body {
   100% { transform: translate(-50%, -50%) scale(3);   opacity: 0; }
 }
 
-/* Legend gradient */
+/* ── Legend gradient ── */
 .heatmap-legend {
   background: linear-gradient(to left, #dc2626, #ea580c, #eab308, #84cc16, #16a34a);
   height: 10px;
   border-radius: 5px;
+}
+
+/* ── Shimmer skeleton ── */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(90deg, rgba(51,65,85,0.4) 25%, rgba(71,85,105,0.6) 50%, rgba(51,65,85,0.4) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 8px;
+}
+
+/* ── Tab indicator slide ── */
+.tab-indicator {
+  transition: transform 250ms cubic-bezier(0.16, 1, 0.3, 1), width 250ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── Toast notification ── */
+@keyframes toastIn {
+  from { transform: translateY(12px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes toastOut {
+  from { transform: translateY(0); opacity: 1; }
+  to   { transform: translateY(-8px); opacity: 0; }
+}
+
+.toast-enter {
+  animation: toastIn 250ms ease-out both;
+}
+
+.toast-exit {
+  animation: toastOut 200ms ease-in both;
+}
+
+/* ── Click/press feedback ── */
+.press-effect {
+  transition: transform 100ms ease-out;
+}
+
+.press-effect:active {
+  transform: scale(0.97);
+}
+
+/* ── Focus visible rings ── */
+.focus-ring:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #1e293b, 0 0 0 4px #3b82f6;
+}
+
+/* ── Local alert banner flash ── */
+@keyframes local-banner-flash {
+  from { opacity: 1; }
+  to   { opacity: 0.15; }
+}
+
+/* ── Animated counter ── */
+@keyframes countPop {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+
+.count-pop {
+  animation: countPop 300ms ease-out;
+}
+
+/* ── Mode switch sliding indicator ── */
+.mode-indicator {
+  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── Respect reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .alert-pulse,
+  .bell-ringing,
+  .user-location-pulse {
+    animation: none !important;
+  }
 }

@@ -1,21 +1,45 @@
+import { useState, useEffect, useRef } from 'react'
 import { Siren, X } from 'lucide-react'
 import { CATEGORY_LABELS, CATEGORY_COLORS } from '../utils/heatmap'
 
 export default function AlertBanner({ alerts, onDismiss }) {
-  if (!alerts || alerts.length === 0) return null
+  const [visible, setVisible] = useState(false)
+  const [exiting, setExiting] = useState(false)
+  const prevAlertId = useRef(null)
 
-  const alert = alerts[0]
+  const hasAlerts = alerts && alerts.length > 0
+  const alert = hasAlerts ? alerts[0] : null
+
+  useEffect(() => {
+    if (hasAlerts && alert.id !== prevAlertId.current) {
+      prevAlertId.current = alert.id
+      setExiting(false)
+      setVisible(true)
+    } else if (!hasAlerts && visible) {
+      setExiting(true)
+      const timer = setTimeout(() => { setVisible(false); setExiting(false) }, 250)
+      return () => clearTimeout(timer)
+    }
+  }, [hasAlerts, alert?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleDismiss = () => {
+    setExiting(true)
+    setTimeout(() => { setVisible(false); setExiting(false); onDismiss?.() }, 250)
+  }
+
+  if (!visible || !alert) return null
+
   const color = CATEGORY_COLORS[alert.cat] || '#ef4444'
 
   return (
     <div
-      className="fixed top-0 left-0 right-0 z-50 alert-pulse"
+      className={`fixed top-0 left-0 right-0 z-50 alert-pulse alert-banner-glow ${exiting ? 'alert-banner-exit' : 'alert-banner-enter'}`}
       style={{ backgroundColor: color }}
     >
       <div className="flex items-center justify-between px-4 py-3 text-white">
         <button
-          onClick={onDismiss}
-          className="p-1 rounded hover:bg-white/20 transition-colors touch-manipulation"
+          onClick={handleDismiss}
+          className="p-1.5 rounded-lg hover:bg-white/20 transition-colors touch-manipulation press-effect focus-ring"
           aria-label="סגור"
         >
           <X size={20} />
@@ -37,7 +61,6 @@ export default function AlertBanner({ alerts, onDismiss }) {
           )}
         </div>
 
-        {/* Spacer to balance the X button */}
         <div className="w-8" />
       </div>
     </div>
