@@ -482,9 +482,18 @@ try {
   if (Array.isArray(data)) {
     alertHistory.push(...data)
     // Restore activeAlerts for any events that hadn't ended when we last shut down
+    // (merge cities across entries of same type)
     for (const e of alertHistory) {
       if (!e.endedAt) {
-        activeAlerts.set(e.type, { type: e.type, title: e.title, cities: e.cities, startedAt: e.startedAt })
+        const existing = activeAlerts.get(e.type)
+        if (existing) {
+          for (const city of e.cities)
+            if (!existing.cities.includes(city)) existing.cities.push(city)
+          if (e.startedAt > (existing._lastUpdate || existing.startedAt))
+            existing._lastUpdate = e.startedAt
+        } else {
+          activeAlerts.set(e.type, { type: e.type, title: e.title, cities: [...e.cities], startedAt: e.startedAt, _lastUpdate: e.startedAt })
+        }
       }
     }
     console.log(`[history] loaded ${alertHistory.length} events from disk, ${activeAlerts.size} restored as active`)
@@ -639,20 +648,31 @@ function rebuildHistoryFromRawLog() {
     if (group) rebuilt.push(group)
   }
 
-  // Apply endAlert events to close matching entries
+  // Apply endAlert events to close matching entries (per-city)
   for (const ev of rawEnds) {
     const endTime = ev.receivedAt
-    // endAlert with type 'endAlert' is generic — close all open entries at that time
-    const endTypes = (ev.source === 'endAlert')
-      ? rebuilt.filter(e => !e.endedAt).map(e => e.type)
-      : [ev.data.type]
-    for (const t of endTypes) {
-      // Find the most recent open entry of this type that started before this end
+    const endCities = Array.isArray(ev.data?.cities) ? ev.data.cities.filter(Boolean) : []
+
+    if (ev.data?.type && ev.data.type !== 'endAlert') {
+      // Typed endAlert — close specific type entirely
       for (let i = rebuilt.length - 1; i >= 0; i--) {
-        if (rebuilt[i].type === t && !rebuilt[i].endedAt && rebuilt[i].startedAt <= endTime) {
+        if (rebuilt[i].type === ev.data.type && !rebuilt[i].endedAt && rebuilt[i].startedAt <= endTime) {
           rebuilt[i].endedAt = endTime
           break
         }
+      }
+    } else if (endCities.length > 0) {
+      // Generic endAlert with city list — remove only those cities
+      const endSet = new Set(endCities)
+      for (const entry of rebuilt) {
+        if (entry.endedAt || entry.startedAt > endTime) continue
+        entry.cities = entry.cities.filter(c => !endSet.has(c))
+        if (entry.cities.length === 0) entry.endedAt = endTime
+      }
+    } else {
+      // Generic endAlert with no cities — close all open entries (safety)
+      for (const entry of rebuilt) {
+        if (!entry.endedAt && entry.startedAt <= endTime) entry.endedAt = endTime
       }
     }
   }
@@ -663,11 +683,19 @@ function rebuildHistoryFromRawLog() {
     alertHistory.push(e)
   }
 
-  // Restore activeAlerts from any unclosed entries
+  // Restore activeAlerts from any unclosed entries (merge cities across entries of same type)
   activeAlerts.clear()
   for (const e of alertHistory) {
     if (!e.endedAt) {
-      activeAlerts.set(e.type, { type: e.type, title: e.title, cities: [...e.cities], startedAt: e.startedAt, _lastUpdate: e.startedAt })
+      const existing = activeAlerts.get(e.type)
+      if (existing) {
+        for (const city of e.cities)
+          if (!existing.cities.includes(city)) existing.cities.push(city)
+        if (e.startedAt > (existing._lastUpdate || existing.startedAt))
+          existing._lastUpdate = e.startedAt
+      } else {
+        activeAlerts.set(e.type, { type: e.type, title: e.title, cities: [...e.cities], startedAt: e.startedAt, _lastUpdate: e.startedAt })
+      }
     }
   }
 
@@ -754,7 +782,7 @@ socket.on('alert', (alerts) => {
       const gap = nowMs - new Date(lastUpdate).getTime()
 
       if (gap <= MERGE_WINDOW_MS) {
-        // Within merge window — merge cities into existing entry
+        // Within merge window — merge cities into existing active entry + history
         for (const city of cities) {
           if (!existing.cities.includes(city)) existing.cities.push(city)
         }
@@ -765,13 +793,18 @@ socket.on('alert', (alerts) => {
             if (!histEntry.cities.includes(city)) histEntry.cities.push(city)
         }
       } else {
-        // Gap > 4 min — close old entry, start new one
+        // Gap > 4 min — close old HISTORY entry, start new one.
+        // But keep accumulating cities in activeAlerts so cities from
+        // earlier waves aren't dropped until an explicit endAlert clears them.
         const histEntry = alertHistory.findLast(e => e.type === a.type && !e.endedAt)
         if (histEntry) histEntry.endedAt = existing._lastUpdate || now
-        activeAlerts.set(a.type, {
-          type: a.type, title: a.title || '', cities, startedAt: now, _lastUpdate: now,
-        })
         alertHistory.push({ type: a.type, title: a.title || '', cities: [...cities], startedAt: now, endedAt: null })
+        // Merge new cities into the active entry (don't replace it)
+        for (const city of cities) {
+          if (!existing.cities.includes(city)) existing.cities.push(city)
+        }
+        existing._lastUpdate = now
+        existing.title = a.title || existing.title
       }
     } else {
       activeAlerts.set(a.type, {
@@ -781,25 +814,66 @@ socket.on('alert', (alerts) => {
     }
   }
   saveHistory()
-  console.log('[redalert] alert — active types:', [...activeAlerts.keys()])
+  console.log('[redalert] alert — active types:', [...activeAlerts.keys()].map(t => `${t}(${activeAlerts.get(t).cities.length})`))
 })
 
 socket.on('endAlert', (alert) => {
   appendRawEvent('endAlert', alert)
   const type = alert?.type
   const now  = new Date().toISOString()
-  // If type is 'endAlert' (generic end signal) clear everything;
-  // otherwise clear only the specific alert type.
-  const typesToClear = (type && type !== 'endAlert')
-    ? [type]
-    : [...activeAlerts.keys()]
-  for (const t of typesToClear) {
-    activeAlerts.delete(t)
-    const histEntry = alertHistory.findLast(e => e.type === t && !e.endedAt)
+  const endCities = Array.isArray(alert?.cities) ? alert.cities.filter(Boolean) : []
+
+  if (type && type !== 'endAlert') {
+    // Typed endAlert — clear only the specific alert type entirely
+    activeAlerts.delete(type)
+    const histEntry = alertHistory.findLast(e => e.type === type && !e.endedAt)
     if (histEntry) histEntry.endedAt = now
+    saveHistory()
+    console.log('[redalert] endAlert:', type, '— cleared type entirely — active types:', [...activeAlerts.keys()])
+    return
   }
+
+  // Generic endAlert (type === 'endAlert') — remove only the listed cities
+  // from each active alert type, not everything.
+  if (endCities.length === 0) {
+    // No city list — fall back to clearing all (safety net)
+    const typesToClear = [...activeAlerts.keys()]
+    for (const t of typesToClear) {
+      activeAlerts.delete(t)
+      const histEntry = alertHistory.findLast(e => e.type === t && !e.endedAt)
+      if (histEntry) histEntry.endedAt = now
+    }
+    saveHistory()
+    console.log('[redalert] endAlert: generic (no cities) — cleared all — active types:', [...activeAlerts.keys()])
+    return
+  }
+
+  const endSet = new Set(endCities)
+  const fullyCleared = []
+
+  for (const [t, entry] of activeAlerts) {
+    const before = entry.cities.length
+    entry.cities = entry.cities.filter(c => !endSet.has(c))
+    if (entry.cities.length === 0) {
+      // All cities cleared for this type — close it
+      activeAlerts.delete(t)
+      const histEntry = alertHistory.findLast(e => e.type === t && !e.endedAt)
+      if (histEntry) histEntry.endedAt = now
+      fullyCleared.push(t)
+    } else if (entry.cities.length < before) {
+      // Partially cleared — close history entry for the cleared cities
+      // but keep the type active for remaining cities
+      const histEntry = alertHistory.findLast(e => e.type === t && !e.endedAt)
+      if (histEntry) {
+        histEntry.cities = histEntry.cities.filter(c => !endSet.has(c))
+        if (histEntry.cities.length === 0) histEntry.endedAt = now
+      }
+    }
+  }
+
   saveHistory()
-  console.log('[redalert] endAlert:', type, '— cleared:', typesToClear, '— active types:', [...activeAlerts.keys()])
+  const remaining = [...activeAlerts.keys()].map(t => `${t}(${activeAlerts.get(t).cities.length})`)
+  console.log(`[redalert] endAlert: generic — ${endCities.length} cities cleared, ${fullyCleared.length} types fully closed [${fullyCleared}] — active: [${remaining}]`)
 })
 
 // ── Auto-tweet: heatmap screenshot + bulletin ─────────────────────────────
