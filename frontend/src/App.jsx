@@ -57,15 +57,18 @@ function RelayStatus({ wsConnected, relayHealth, mode }) {
 
 function ModeSwitch({ mode, onChange }) {
   return (
-    <div className="relative flex bg-slate-900/60 rounded-full p-0.5 border border-slate-600/80 shrink-0">
-      {/* Sliding indicator */}
+    <div dir="ltr" className="relative flex bg-slate-900/60 rounded-full p-0.5 border border-slate-600/80 shrink-0">
+      {/* Sliding indicator — rendered in LTR to avoid RTL positioning issues */}
       <div
-        className={`absolute top-0.5 bottom-0.5 rounded-full transition-all duration-200 ease-out ${
-          mode === 'live'
-            ? 'bg-red-600 shadow-lg shadow-red-600/30 left-0.5 right-1/2'
-            : 'bg-blue-600 shadow-lg shadow-blue-600/30 left-1/2 right-0.5'
-        }`}
-        style={{ width: 'calc(50% - 2px)', transform: mode === 'live' ? 'translateX(0)' : 'translateX(calc(100% + 4px))' }}
+        className={`absolute top-0.5 bottom-0.5 rounded-full transition-all duration-200 ease-out
+          ${mode === 'live'
+            ? 'bg-red-600 shadow-lg shadow-red-600/30'
+            : 'bg-blue-600 shadow-lg shadow-blue-600/30'
+          }`}
+        style={{
+          width: 'calc(50% - 2px)',
+          left: mode === 'live' ? '2px' : 'calc(50%)',
+        }}
       />
       <button
         onClick={() => onChange('live')}
