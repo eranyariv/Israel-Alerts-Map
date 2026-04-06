@@ -155,8 +155,12 @@ function MapControls({ rulerActive, onToggleRuler }) {
 
   const handleLocate = (e) => {
     e.preventDefault()
-    setLocating(true)
-    map.locate({ setView: true, maxZoom: 13 })
+    if (map._userLatLng) {
+      map.flyTo(map._userLatLng, 13, { duration: 1.2 })
+    } else {
+      setLocating(true)
+      map.locate({ setView: true, maxZoom: 13 })
+    }
   }
 
   const handleReset = (e) => {
@@ -205,6 +209,7 @@ function UserLocation() {
 
     const onSuccess = ({ coords }) => {
       const latlng = [coords.latitude, coords.longitude]
+      map._userLatLng = latlng
       if (!markerRef.current) {
         const icon = L.divIcon({
           className: '',
@@ -227,6 +232,7 @@ function UserLocation() {
     return () => {
       navigator.geolocation.clearWatch(watchId)
       if (markerRef.current) { map.removeLayer(markerRef.current); markerRef.current = null }
+      delete map._userLatLng
     }
   }, [map])
 
