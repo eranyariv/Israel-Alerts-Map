@@ -715,6 +715,16 @@ const connState = {
   reconnectAttempts: 0,
 }
 
+// Ring buffer of connection events for diagnostics (kept in memory, capped)
+const CONN_LOG_MAX = 500
+const connLog = []
+
+function pushConnLog(event, data = {}) {
+  const entry = { event, at: new Date().toISOString(), ...data }
+  connLog.push(entry)
+  if (connLog.length > CONN_LOG_MAX) connLog.splice(0, connLog.length - CONN_LOG_MAX)
+}
+
 // ── Socket.IO connection ──────────────────────────────────────────────────
 
 const socket = io(RA_URL, {
@@ -729,12 +739,14 @@ socket.on('connect', () => {
   connState.disconnectedAt   = null
   connState.disconnectReason = null
   connState.reconnectAttempts = 0
+  pushConnLog('connect')
   console.log('[redalert] connected')
 })
 
 socket.on('disconnect', (reason) => {
   connState.disconnectedAt   = new Date().toISOString()
   connState.disconnectReason = reason
+  pushConnLog('disconnect', { reason })
   console.log('[redalert] disconnected:', reason)
   // Socket.IO does not auto-reconnect after a server-initiated disconnect.
   // Manually reconnect so we never miss endAlert events.
@@ -757,11 +769,16 @@ socket.on('connect_error', (err) => {
     at:          new Date().toISOString(),
   }
   connState.lastError = detail
+  pushConnLog('connect_error', { message: detail.message, code: detail.code, status: detail.status })
   console.error('[redalert] connection error:', JSON.stringify(detail))
 })
 
 socket.io.on('reconnect_attempt', (attempt) => {
   connState.reconnectAttempts = attempt
+  // Log every 10th attempt to avoid flooding, plus the first one
+  if (attempt === 1 || attempt % 10 === 0) {
+    pushConnLog('reconnect_attempt', { attempt })
+  }
 })
 
 const MERGE_WINDOW_MS = 4 * 60 * 1000  // 4 minutes — same as frontend merge
@@ -1260,6 +1277,7 @@ app.get('/', (req, res) => {
         <tr><td>/eventlog</td><td>Raw WebSocket event log (up to 31 days, persistent). Type filters, area search, shareable URLs. <a href="/eventlog">View →</a></td></tr>
         <tr><td>/eventlog.json</td><td>Raw event log as JSON. Supports <code>?hours=N</code> (max 744 = 31 days).</td></tr>
         <tr><td>/health</td><td>Upstream connectivity status, reconnect count, diagnostics.</td></tr>
+        <tr><td>/connlog</td><td>Connection event history (connect, disconnect, errors). Supports <code>?limit=N</code> (max 500). Newest first.</td></tr>
         <tr><td>/demo</td><td>Static sample payload with all 8 alert types — for building UIs.</td></tr>
       </tbody>
     </table>
@@ -1367,6 +1385,24 @@ app.get('/', (req, res) => {
         <li><span class="field-name">activeTypes</span><span class="field-type">string[]</span><span class="field-desc">Keys of currently active alert types</span></li>
       </ul>
       <a class="try-link" href="/health">Try it →</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <span class="method">GET</span>
+      <span class="path">/connlog</span>
+      <span class="tag tag-live">live</span>
+    </div>
+    <div class="card-body">
+      <p>Connection event history — connect, disconnect, and error events with timestamps. Newest first.</p>
+      <ul class="field-list">
+        <li><span class="field-name">total</span><span class="field-type">number</span><span class="field-desc">Total events in buffer</span></li>
+        <li><span class="field-name">showing</span><span class="field-type">number</span><span class="field-desc">Number of events returned</span></li>
+        <li><span class="field-name">events[]</span><span class="field-type">object[]</span><span class="field-desc">Event entries (event, at, plus event-specific fields)</span></li>
+      </ul>
+      <p style="margin-top:.5rem;font-size:.8rem;color:#94a3b8">Query: <code>?limit=N</code> — max 500, default 100</p>
+      <a class="try-link" href="/connlog">Try it →</a>
     </div>
   </div>
 
@@ -2594,7 +2630,15 @@ app.get('/health', (req, res) => {
     lastError:         connState.lastError,
     activeCount:       activeAlerts.size,
     activeTypes:       [...activeAlerts.keys()],
+    connLogSize:       connLog.length,
   })
+})
+
+// Full connection log — newest first
+app.get('/connlog', (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit ?? '100', 10) || 100, CONN_LOG_MAX)
+  const events = connLog.slice(-limit).reverse()
+  res.json({ total: connLog.length, showing: events.length, events })
 })
 
 app.listen(PORT, () => {
