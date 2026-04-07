@@ -2636,6 +2636,162 @@ app.get('/connlog', (req, res) => {
   res.json({ total: connLog.length, showing: events.length, events })
 })
 
+// ── Backfill: import missing history from dleshem/israel-alerts-data CSV ────
+// POST /api/backfill?from=ISO&to=ISO  (admin-only)
+// Fetches the CSV, parses alerts in the [from, to) window, merges with 4-min
+// window, pairs with endAlert rows, and inserts into alertHistory.
+
+const DLESHEM_CSV_URL = 'https://raw.githubusercontent.com/dleshem/israel-alerts-data/main/israel-alerts.csv'
+
+const DLESHEM_CAT_MAP = {
+  1:  'missiles',
+  2:  'hostileAircraftIntrusion',
+  3:  'terroristInfiltration',
+  4:  'earthQuake',
+  5:  'newsFlash',
+  6:  'radiologicalEvent',
+  7:  'tsunami',
+  8:  'hazardousMaterials',
+  14: 'missiles',   // cat 14 appears as rockets in recent data
+}
+
+app.post('/api/backfill', express.json(), async (req, res) => {
+  if (!isAdmin(req)) return res.status(401).json({ error: 'Unauthorized' })
+
+  const from = req.query.from || req.body?.from
+  const to   = req.query.to   || req.body?.to
+  if (!from || !to) return res.status(400).json({ error: 'from and to query params required (ISO timestamps)' })
+
+  const dryRun = (req.query.dry ?? req.body?.dry) === '1'
+
+  console.log(`[backfill] ${dryRun ? 'DRY RUN ' : ''}from=${from} to=${to}`)
+
+  try {
+    // Fetch CSV
+    const csvResp = await fetch(DLESHEM_CSV_URL)
+    if (!csvResp.ok) throw new Error(`CSV fetch failed: ${csvResp.status}`)
+    const csvText = await csvResp.text()
+    const lines = csvText.split('\n').slice(1).filter(l => l.trim())
+
+    // Parse rows in the gap window
+    // CSV: data(city), date, time, alertDate(ISO), category, category_desc, matrix_id, rid
+    const gapAlerts = []  // { city, alertDate, cat, type, desc }
+    const gapEnds   = []  // { city, alertDate }
+
+    for (const line of lines) {
+      const cols = line.split(',')
+      if (cols.length < 6) continue
+      const alertDate = cols[3]
+      if (alertDate < from || alertDate >= to) continue
+
+      const city    = cols[0]
+      const catNum  = parseInt(cols[4], 10)
+      const desc    = cols[5]
+
+      if (catNum === 13) {
+        // endAlert
+        gapEnds.push({ city, alertDate })
+      } else {
+        const type = DLESHEM_CAT_MAP[catNum]
+        if (!type) continue
+        gapAlerts.push({ city, alertDate, cat: catNum, type, desc })
+      }
+    }
+
+    console.log(`[backfill] parsed ${gapAlerts.length} alerts + ${gapEnds.length} endAlerts in gap`)
+
+    if (gapAlerts.length === 0) {
+      return res.json({ ok: true, message: 'No alerts found in gap period', inserted: 0 })
+    }
+
+    // Group by type, then merge with 4-min window
+    const MERGE_MS = 4 * 60 * 1000
+    const byType = {}
+    for (const a of gapAlerts) {
+      (byType[a.type] ??= []).push(a)
+    }
+
+    const merged = []
+    for (const [type, events] of Object.entries(byType)) {
+      events.sort((a, b) => a.alertDate.localeCompare(b.alertDate))
+      let group = null
+      for (const ev of events) {
+        const tsMs = new Date(ev.alertDate).getTime()
+        if (!group || tsMs - group._lastMs >= MERGE_MS) {
+          if (group) merged.push(group)
+          group = {
+            type,
+            title: ev.desc || '',
+            cities: [ev.city],
+            startedAt: new Date(ev.alertDate).toISOString(),
+            endedAt: null,
+            _lastMs: tsMs,
+          }
+        } else {
+          if (!group.cities.includes(ev.city)) group.cities.push(ev.city)
+          group._lastMs = Math.max(group._lastMs, tsMs)
+        }
+      }
+      if (group) merged.push(group)
+    }
+
+    // Apply endAlert events to set endedAt (match by city overlap)
+    const endsByTime = [...gapEnds].sort((a, b) => a.alertDate.localeCompare(b.alertDate))
+    for (const end of endsByTime) {
+      const endMs = new Date(end.alertDate).getTime()
+      // Find the most recent open entry that contains this city
+      for (let i = merged.length - 1; i >= 0; i--) {
+        const entry = merged[i]
+        if (entry.endedAt) continue
+        if (new Date(entry.startedAt).getTime() > endMs) continue
+        if (entry.cities.includes(end.city)) {
+          entry.endedAt = new Date(end.alertDate).toISOString()
+          break
+        }
+      }
+    }
+
+    // Clean up internal fields
+    for (const e of merged) delete e._lastMs
+
+    // Close any still-open entries (safety — assume stale after 20 min)
+    const STALE_MS = 20 * 60 * 1000
+    const toMs = new Date(to).getTime()
+    for (const e of merged) {
+      if (!e.endedAt) {
+        const startMs = new Date(e.startedAt).getTime()
+        e.endedAt = new Date(Math.min(startMs + STALE_MS, toMs)).toISOString()
+      }
+    }
+
+    // Check for duplicates — skip entries whose startedAt already exists in history
+    const existingStarts = new Set(alertHistory.map(e => `${e.type}@${e.startedAt}`))
+    const toInsert = merged.filter(e => !existingStarts.has(`${e.type}@${e.startedAt}`))
+
+    console.log(`[backfill] ${merged.length} merged entries, ${toInsert.length} new (${merged.length - toInsert.length} duplicates skipped)`)
+
+    if (!dryRun && toInsert.length > 0) {
+      alertHistory.push(...toInsert)
+      alertHistory.sort((a, b) => (a.startedAt || '').localeCompare(b.startedAt || ''))
+      saveHistory()
+    }
+
+    res.json({
+      ok: true,
+      dryRun,
+      gapAlertRows: gapAlerts.length,
+      gapEndRows: gapEnds.length,
+      merged: merged.length,
+      duplicatesSkipped: merged.length - toInsert.length,
+      inserted: dryRun ? 0 : toInsert.length,
+      entries: toInsert,
+    })
+  } catch (e) {
+    console.error('[backfill] error:', e.message)
+    res.status(500).json({ error: e.message })
+  }
+})
+
 app.listen(PORT, () => {
   console.log(`[relay] v${VERSION} listening on :${PORT}`)
 })
