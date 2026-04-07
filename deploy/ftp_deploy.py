@@ -23,7 +23,7 @@ REMOTE_MAP_ROOT  = '/public_html/map'
 REMOTE_SITE_ROOT = '/public_html'
 
 DEPLOY_FILES = [
-    ('index.html', '/public_html/index.html'),
+    # Homepage (index.html) is now managed by the yariv-org repo — do not deploy from here.
 ]
 
 def upload_file(ftp, local_path, remote_path):
