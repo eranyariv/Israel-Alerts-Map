@@ -662,12 +662,12 @@ function rebuildHistoryFromRawLog() {
         }
       }
     } else if (endCities.length > 0) {
-      // Generic endAlert with city list — remove only those cities
+      // Generic endAlert with city list — close entries whose cities are all cleared
       const endSet = new Set(endCities)
       for (const entry of rebuilt) {
         if (entry.endedAt || entry.startedAt > endTime) continue
-        entry.cities = entry.cities.filter(c => !endSet.has(c))
-        if (entry.cities.length === 0) entry.endedAt = endTime
+        const remaining = entry.cities.filter(c => !endSet.has(c))
+        if (remaining.length === 0) entry.endedAt = endTime
       }
     } else {
       // Generic endAlert with no cities — close all open entries (safety)
@@ -878,13 +878,8 @@ socket.on('endAlert', (alert) => {
       if (histEntry) histEntry.endedAt = now
       fullyCleared.push(t)
     } else if (entry.cities.length < before) {
-      // Partially cleared — close history entry for the cleared cities
-      // but keep the type active for remaining cities
-      const histEntry = alertHistory.findLast(e => e.type === t && !e.endedAt)
-      if (histEntry) {
-        histEntry.cities = histEntry.cities.filter(c => !endSet.has(c))
-        if (histEntry.cities.length === 0) histEntry.endedAt = now
-      }
+      // Partially cleared — keep the type active for remaining cities.
+      // History entry preserves all originally-alerted cities (don't mutate).
     }
   }
 
