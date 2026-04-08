@@ -1,6 +1,6 @@
 properties:
   template:
-    revisionSuffix: v1-48
+    revisionSuffix: v1-53
     containers:
       - name: redalert-relay
         image: redalertrelay.azurecr.io/redalert-relay:latest

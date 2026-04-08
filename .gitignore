@@ -11,3 +11,9 @@ deploy/israel-alerts/
 deploy/.env.deploy
 secrets.txt
 relay/Azure console.txt
+.claude/
+frontend/public/audio/Michal/
+ga-reader.json
+relay/migrate_city_names.py
+relay/migrate_city_names_final.py
+relay/review-mapping.html
