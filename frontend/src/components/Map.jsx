@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { MapContainer, TileLayer, GeoJSON, useMap, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
-import { Locate, Maximize2, Ruler } from 'lucide-react'
+import { Locate, Maximize2, Ruler, Search, X } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
 import { getHeatColor } from '../utils/heatmap'
 import { getHourColor } from '../utils/analytics'
@@ -132,7 +132,128 @@ function RulerTool({ active, onDeactivate }) {
   return null
 }
 
-function MapControls({ rulerActive, onToggleRuler }) {
+function SearchControl({ zones, allAreas, open, onClose }) {
+  const map = useMap()
+  const [query, setQuery] = useState('')
+  const inputRef = useRef(null)
+  const panelRef = useRef(null)
+
+  useEffect(() => {
+    if (open) inputRef.current?.focus()
+    if (!open) setQuery('')
+  }, [open])
+
+  // Close on Escape
+  useEffect(() => {
+    if (!open) return
+    const handler = (e) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [open])
+
+  // Close when clicking outside the panel
+  useEffect(() => {
+    if (!open) return
+    const handler = (e) => {
+      if (panelRef.current && !panelRef.current.contains(e.target)) onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const suggestions = query.trim()
+    ? allAreas.filter(a => a.includes(query.trim())).slice(0, 10)
+    : []
+
+  const flyToAreaName = (name) => {
+    if (!zones) return
+    const feature = zones.features.find(f => f.properties.name === name)
+    if (!feature) return
+    try {
+      const group = L.featureGroup([L.geoJSON(feature)])
+      map.flyToBounds(group.getBounds(), { padding: [60, 60], maxZoom: 13, duration: 1.2 })
+    } catch {}
+    onClose()
+  }
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    if (suggestions.length > 0) flyToAreaName(suggestions[0])
+  }
+
+  if (!open) return null
+
+  return (
+    <div className="leaflet-top leaflet-right" style={{ marginTop: 12, marginRight: 12 }}>
+      <div
+        ref={panelRef}
+        className="leaflet-control"
+        style={{ border: 'none' }}
+        // Prevent map interactions when interacting with search
+        onMouseDown={e => e.stopPropagation()}
+        onDoubleClick={e => e.stopPropagation()}
+        onWheel={e => e.stopPropagation()}
+      >
+        <form onSubmit={handleSubmit} style={{ position: 'relative', width: 260 }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            background: '#1e293b', border: '1px solid #475569', borderRadius: 10,
+            padding: '6px 10px', boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+          }}>
+            <Search size={15} style={{ color: '#94a3b8', flexShrink: 0 }} />
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="חפש אזור..."
+              dir="rtl"
+              style={{
+                flex: 1, background: 'transparent', border: 'none', outline: 'none',
+                color: '#f1f5f9', fontSize: 14, fontFamily: 'Assistant, sans-serif',
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => onClose()}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}
+            >
+              <X size={15} style={{ color: '#94a3b8' }} />
+            </button>
+          </div>
+
+          {suggestions.length > 0 && (
+            <div style={{
+              position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
+              background: '#1e293b', border: '1px solid #475569', borderRadius: 10,
+              boxShadow: '0 4px 16px rgba(0,0,0,0.5)', maxHeight: 220, overflowY: 'auto',
+            }}>
+              {suggestions.map(name => (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => flyToAreaName(name)}
+                  style={{
+                    width: '100%', textAlign: 'right', padding: '8px 12px',
+                    background: 'transparent', border: 'none', color: '#e2e8f0',
+                    fontSize: 13, fontFamily: 'Assistant, sans-serif', cursor: 'pointer',
+                    borderBottom: '1px solid #334155', direction: 'rtl',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#334155'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+          )}
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function MapControls({ rulerActive, onToggleRuler, onToggleSearch, searchOpen }) {
   const map = useMap()
   const [locating,   setLocating]   = useState(false)
   const [atDefault,  setAtDefault]  = useState(true)
@@ -178,6 +299,13 @@ function MapControls({ rulerActive, onToggleRuler }) {
   return (
     <div className="leaflet-bottom leaflet-right" style={{ marginBottom: '30px', marginRight: '12px' }}>
       <div className="leaflet-control" style={{ border: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <button
+          onClick={(e) => { e.preventDefault(); onToggleSearch() }}
+          title="חיפוש אזור"
+          style={{ ...BTN_STYLE, background: searchOpen ? '#2563eb' : '#1e293b', transition: 'background 0.2s' }}
+        >
+          <Search size={17} style={{ color: searchOpen ? '#ffffff' : '#cbd5e1', transition: 'color 0.2s' }} />
+        </button>
         <button
           onClick={handleReset}
           title="חזרה לתצוגת ישראל"
@@ -276,9 +404,10 @@ function LiveFlyTo({ currentAlerts }) {
   return null
 }
 
-export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapType = DEFAULT_MAP_TYPE, historyView = 'heatmap', realizationData = {}, catColors = {}, peakHoursData = {}, durationData = {}, simultaneousData = {}, sequenceData = {} }) {
+export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapType = DEFAULT_MAP_TYPE, historyView = 'heatmap', realizationData = {}, catColors = {}, peakHoursData = {}, durationData = {}, simultaneousData = {}, sequenceData = {}, allAreas = [] }) {
   const [zones, setZones] = useState(null)
   const [rulerActive, setRulerActive] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
 
   const toggleRuler = useCallback(() => setRulerActive(prev => !prev), [])
 
@@ -531,7 +660,8 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
       />
 
       <ExposeMap />
-      <MapControls rulerActive={rulerActive} onToggleRuler={toggleRuler} />
+      <MapControls rulerActive={rulerActive} onToggleRuler={toggleRuler} searchOpen={searchOpen} onToggleSearch={() => setSearchOpen(o => !o)} />
+      <SearchControl zones={zones} allAreas={allAreas} open={searchOpen} onClose={() => setSearchOpen(false)} />
       <RulerTool active={rulerActive} onDeactivate={() => setRulerActive(false)} />
       <UserLocation />
       <LiveFlyTo currentAlerts={currentAlerts} />

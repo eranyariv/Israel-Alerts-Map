@@ -962,7 +962,7 @@ function AppInner() {
 
       {/* -- Map ------------------------------------------------------------- */}
       <main className="flex-1 relative">
-        <Map heatmapData={heatmapData} currentAlerts={currentAlerts} flyToArea={flyToArea} mode={mode} mapType={mapType} historyView={historyView} realizationData={realizationData} catColors={catColors} peakHoursData={peakHoursData} durationData={durationData} simultaneousData={simultaneousData} sequenceData={sequenceData} />
+        <Map heatmapData={heatmapData} currentAlerts={currentAlerts} flyToArea={flyToArea} mode={mode} mapType={mapType} historyView={historyView} realizationData={realizationData} catColors={catColors} peakHoursData={peakHoursData} durationData={durationData} simultaneousData={simultaneousData} sequenceData={sequenceData} allAreas={allAreas} />
 
         {/* Local alert banner — flashing, floating above all map controls */}
         {localBanner && (
