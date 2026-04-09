@@ -1,7 +1,7 @@
 {
   "name": "israel-resilience-map",
   "private": true,
-  "version": "2.04",
+  "version": "2.05",
   "type": "module",
   "scripts": {
     "dev": "vite",
