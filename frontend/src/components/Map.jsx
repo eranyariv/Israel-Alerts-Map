@@ -617,12 +617,12 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
           const color = CAT_COLORS[a.cat] || '#94a3b8'
           return `<div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid #1e293b;direction:rtl">
             <span style="color:${color};font-size:12px;flex:1;text-align:right">${label}</span>
-            <span style="color:#64748b;font-size:11px;font-family:monospace;white-space:nowrap;direction:ltr">${dt}</span>
+            <span style="color:#cbd5e1;font-size:11px;font-family:monospace;white-space:nowrap;direction:ltr">${dt}</span>
           </div>`
         }).join('')
         return `<div dir="rtl" style="font-family:Assistant,sans-serif;width:290px;text-align:right;direction:rtl">
           <div style="font-weight:700;font-size:15px;color:#f1f5f9;margin-bottom:2px">${name}</div>
-          <div style="font-size:12px;color:#64748b;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid #334155">${alerts.length} התרעות</div>
+          <div style="font-size:12px;color:#94a3b8;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid #334155">${alerts.length} התרעות</div>
           ${histogramHtml}
           ${realizationHtml}
           <div style="max-height:250px;overflow-y:auto">${rows}</div>
