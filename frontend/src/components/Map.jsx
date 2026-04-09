@@ -151,14 +151,16 @@ function SearchControl({ zones, allAreas, open, onClose }) {
     return () => document.removeEventListener('keydown', handler)
   }, [open])
 
-  // Close when clicking outside the panel
+  // Close when clicking outside the panel (use timeout to let click events on children fire first)
   useEffect(() => {
     if (!open) return
     const handler = (e) => {
-      if (panelRef.current && !panelRef.current.contains(e.target)) onClose()
+      if (panelRef.current && !panelRef.current.contains(e.target)) {
+        setTimeout(() => onClose(), 0)
+      }
     }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    document.addEventListener('pointerdown', handler)
+    return () => document.removeEventListener('pointerdown', handler)
   }, [open])
 
   const suggestions = query.trim()
@@ -232,7 +234,7 @@ function SearchControl({ zones, allAreas, open, onClose }) {
                 <button
                   key={name}
                   type="button"
-                  onClick={() => flyToAreaName(name)}
+                  onPointerDown={(e) => { e.stopPropagation(); flyToAreaName(name) }}
                   style={{
                     width: '100%', textAlign: 'right', padding: '8px 12px',
                     background: 'transparent', border: 'none', color: '#e2e8f0',
