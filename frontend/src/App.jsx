@@ -18,6 +18,7 @@ import { computePeakHours, computeDuration, computeSimultaneous, computeSequence
 import { VERSION } from './version'
 import { DEFAULT_MAP_TYPE } from './utils/mapTiles'
 import { trackEvent } from './utils/ga'
+import * as logger from './utils/logger'
 
 const HISTORY_TABS = [
   { id: 'stats',   label: 'סטטיסטיקה',    Icon: BarChart2 },
@@ -341,6 +342,13 @@ function AppInner() {
 
   const { currentAlerts, heatmapData, rawEvents, loading, error, lastRefresh, refresh, wsConnected, relayHealth } = useAlerts({ source: 'redalert', demoMode, demoZone })
 
+  // Log device info on mount for debugging
+  useEffect(() => {
+    const deviceInfo = logger.getDeviceInfo()
+    logger.info('[App] mounted — device info', deviceInfo)
+    logger.info('[App] version', { version: VERSION })
+  }, [])
+
   const catColors = useMemo(() => ({ ...CATEGORY_COLORS, ...customCatColors }), [customCatColors])
   const handleCatColorChange = useCallback((cat, color) => { setCustomCatColors(prev => { const next = { ...prev, [cat]: color }; localStorage.setItem('customCatColors', JSON.stringify(next)); return next }) }, [])
   const handleCatColorsReset = useCallback(() => { setCustomCatColors({}); localStorage.removeItem('customCatColors') }, [])
@@ -491,7 +499,9 @@ function AppInner() {
   }, [])
 
   // 5-tap on version number for touch devices
-  const handleVersionTap = () => {
+  const handleVersionTap = (e) => {
+    // Prevent any default behavior (e.g. text selection on iOS)
+    if (e) e.preventDefault()
     const tap = debugTapRef.current
     tap.count++
     clearTimeout(tap.timer)
@@ -499,7 +509,7 @@ function AppInner() {
       tap.count = 0
       setDebugShown(s => !s)
     } else {
-      tap.timer = setTimeout(() => { tap.count = 0 }, 1500)
+      tap.timer = setTimeout(() => { tap.count = 0 }, 2000)
     }
   }
 
@@ -580,8 +590,14 @@ function AppInner() {
   }, [])
 
   const handleAreaClick = useCallback((area) => {
+    logger.info('[App] handleAreaClick', {
+      type: typeof area,
+      isArray: Array.isArray(area),
+      value: Array.isArray(area) ? `[${area.length} areas]: ${area.slice(0, 3).join(', ')}` : area,
+    })
     trackEvent('area_click', { area: typeof area === 'string' ? area : `${area.length}_areas` })
     setFlyToArea(area)
+    logger.info('[App] setFlyToArea dispatched')
   }, [])
 
   const dismissNotifHint = useCallback(() => {
@@ -954,8 +970,11 @@ function AppInner() {
             className="text-[10px] text-slate-600 hover:text-slate-400 transition-colors"
           >נתונים: RedAlert API</a>
           <span
-            className="text-[10px] text-slate-600 cursor-default select-none"
+            className="text-[10px] text-slate-600 cursor-default select-none px-2 py-1"
+            role="button"
+            tabIndex={-1}
             onClick={handleVersionTap}
+            onTouchEnd={handleVersionTap}
           >v{VERSION}</span>
         </div>
       </aside>
@@ -1118,8 +1137,11 @@ function AppInner() {
       <div className="md:hidden fixed z-20 flex items-center gap-2"
         style={{ bottom: 'calc(0.5rem + env(safe-area-inset-bottom))', left: '0.75rem' }}>
         <span
-          className="text-[10px] text-slate-600 select-none cursor-default"
+          className="text-[10px] text-slate-600 select-none cursor-default px-2 py-1"
+          role="button"
+          tabIndex={-1}
           onClick={handleVersionTap}
+          onTouchEnd={handleVersionTap}
         >v{VERSION}</span>
         <a
           href="https://redalert.orielhaim.com/"

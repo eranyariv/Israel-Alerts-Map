@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { MapContainer, TileLayer, GeoJSON, useMap, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
 import { Locate, Maximize2, Ruler, Search, X } from 'lucide-react'
@@ -6,6 +7,7 @@ import 'leaflet/dist/leaflet.css'
 import { getHeatColor } from '../utils/heatmap'
 import { getHourColor } from '../utils/analytics'
 import { MAP_TILES, DEFAULT_MAP_TYPE } from '../utils/mapTiles'
+import * as logger from '../utils/logger'
 
 const ISRAEL_CENTER = [31.0461, 34.8516]
 
@@ -137,66 +139,203 @@ function SearchControl({ zones, allAreas, open, onClose }) {
   const [query, setQuery] = useState('')
   const inputRef = useRef(null)
   const panelRef = useRef(null)
+  const formRef = useRef(null)
+  const inputFocusedRef = useRef(false)
+  const [dropdownPos, setDropdownPos] = useState(null)
+
+  // Recompute dropdown position when suggestions change or panel opens
+  useEffect(() => {
+    if (!open || !formRef.current) { setDropdownPos(null); return }
+    const rect = formRef.current.getBoundingClientRect()
+    setDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width })
+  }, [open, query])
 
   useEffect(() => {
-    if (open) inputRef.current?.focus()
-    if (!open) setQuery('')
+    logger.info('[SearchControl] open changed', { open, hasInputRef: !!inputRef.current })
+    if (open) {
+      logger.info('[SearchControl] focusing input')
+      inputRef.current?.focus()
+      logger.info('[SearchControl] activeElement after focus', { tag: document.activeElement?.tagName, type: document.activeElement?.type })
+    }
+    if (!open) {
+      logger.info('[SearchControl] closing — clearing query')
+      setQuery('')
+      inputFocusedRef.current = false
+    }
   }, [open])
 
   // Close on Escape
   useEffect(() => {
     if (!open) return
-    const handler = (e) => { if (e.key === 'Escape') onClose() }
+    const handler = (e) => {
+      if (e.key === 'Escape') {
+        logger.info('[SearchControl] Escape pressed — closing')
+        onClose()
+      }
+    }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
   }, [open])
 
-  // Close when clicking outside the panel (use timeout to let click events on children fire first)
+  // Close when tapping outside the panel.
+  // Uses 'click' (not 'pointerdown') so iOS can settle after keyboard dismissal.
+  // If the input was focused (keyboard up), the first outside tap only dismisses
+  // the keyboard — we skip the close and wait for the next tap.
   useEffect(() => {
     if (!open) return
     const handler = (e) => {
-      if (panelRef.current && !panelRef.current.contains(e.target)) {
-        setTimeout(() => onClose(), 0)
+      const inPanel = panelRef.current && panelRef.current.contains(e.target)
+      const portalEl = document.getElementById('search-dropdown-portal')
+      const inPortal = portalEl && portalEl.contains(e.target)
+      const inside = inPanel || inPortal
+      const wasFocused = inputFocusedRef.current
+      logger.info('[SearchControl] click outside-check', {
+        inside,
+        inPanel,
+        inPortal,
+        wasFocused,
+        targetTag: e.target?.tagName,
+        targetClass: e.target?.className?.toString?.()?.slice(0, 80),
+      })
+      if (inside) return
+
+      // If the keyboard was just up, this tap only dismissed it — don't close
+      if (wasFocused) {
+        logger.info('[SearchControl] skipping close — keyboard was up, just dismissed')
+        inputFocusedRef.current = false
+        return
       }
+
+      logger.info('[SearchControl] outside tap — closing')
+      onClose()
     }
-    document.addEventListener('pointerdown', handler)
-    return () => document.removeEventListener('pointerdown', handler)
+    document.addEventListener('click', handler, true)
+    return () => document.removeEventListener('click', handler, true)
   }, [open])
 
   const suggestions = query.trim()
     ? allAreas.filter(a => a.includes(query.trim())).slice(0, 10)
     : []
 
+  // Log suggestion changes
+  useEffect(() => {
+    logger.info('[SearchControl] suggestions updated', {
+      query: query.trim(),
+      count: suggestions.length,
+      first3: suggestions.slice(0, 3),
+    })
+  }, [query, suggestions.length])
+
   const flyToAreaName = (name) => {
-    if (!zones) return
+    logger.info('[SearchControl] flyToAreaName called', { name, hasZones: !!zones, featureCount: zones?.features?.length })
+    if (!zones) {
+      logger.warn('[SearchControl] flyToAreaName aborted — zones is null')
+      return
+    }
     const feature = zones.features.find(f => f.properties.name === name)
-    if (!feature) return
+    logger.info('[SearchControl] feature lookup', { name, found: !!feature })
+    if (!feature) {
+      logger.warn('[SearchControl] flyToAreaName aborted — feature not found', { name })
+      return
+    }
     try {
       const group = L.featureGroup([L.geoJSON(feature)])
-      map.flyToBounds(group.getBounds(), { padding: [60, 60], maxZoom: 13, duration: 1.2 })
-    } catch {}
+      const bounds = group.getBounds()
+      logger.info('[SearchControl] flyToBounds', {
+        name,
+        bounds: { sw: [bounds.getSouthWest().lat, bounds.getSouthWest().lng], ne: [bounds.getNorthEast().lat, bounds.getNorthEast().lng] },
+        mapCenter: [map.getCenter().lat, map.getCenter().lng],
+        mapZoom: map.getZoom(),
+      })
+      map.flyToBounds(bounds, { padding: [60, 60], maxZoom: 13, duration: 1.2 })
+      logger.success('[SearchControl] flyToBounds initiated', { name })
+    } catch (err) {
+      logger.error('[SearchControl] flyToBounds error', { name, error: String(err) })
+    }
+    logger.info('[SearchControl] calling onClose after fly')
     onClose()
   }
 
   const handleSubmit = (e) => {
     e.preventDefault()
+    logger.info('[SearchControl] form submitted', { query, suggestionsCount: suggestions.length, firstSuggestion: suggestions[0] })
     if (suggestions.length > 0) flyToAreaName(suggestions[0])
+    else logger.warn('[SearchControl] submit ignored — no suggestions')
+  }
+
+  const handleSuggestionTap = (name, e) => {
+    logger.info('[SearchControl] suggestion tapped', {
+      name,
+      eventType: e?.type,
+      pointerType: e?.pointerType,
+    })
+    e?.preventDefault()
+    e?.stopPropagation()
+    // Blur input first to dismiss keyboard and prevent viewport shift
+    inputRef.current?.blur()
+    inputFocusedRef.current = false
+    flyToAreaName(name)
   }
 
   if (!open) return null
 
+  // Render the suggestions dropdown via a portal to document.body so it escapes
+  // Leaflet's stacking context and sits above all mobile overlays (top bar z-20).
+  const dropdownPortal = suggestions.length > 0 && dropdownPos
+    ? createPortal(
+        <div
+          id="search-dropdown-portal"
+          style={{
+            position: 'fixed',
+            top: dropdownPos.top,
+            left: dropdownPos.left,
+            width: dropdownPos.width,
+            zIndex: 99999,
+            background: '#1e293b', border: '1px solid #475569', borderRadius: 10,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.5)', maxHeight: 220, overflowY: 'auto',
+          }}
+        >
+          {suggestions.map(name => (
+            <button
+              key={name}
+              type="button"
+              onPointerDown={(e) => handleSuggestionTap(name, e)}
+              onClick={(e) => handleSuggestionTap(name, e)}
+              onTouchEnd={(e) => {
+                logger.info('[SearchControl] suggestion touchEnd', { name })
+                handleSuggestionTap(name, e)
+              }}
+              style={{
+                width: '100%', textAlign: 'right', padding: '8px 12px',
+                background: 'transparent', border: 'none', color: '#e2e8f0',
+                fontSize: 13, fontFamily: 'Assistant, sans-serif', cursor: 'pointer',
+                borderBottom: '1px solid #334155', direction: 'rtl',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = '#334155'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              {name}
+            </button>
+          ))}
+        </div>,
+        document.body
+      )
+    : null
+
   return (
+    <>
     <div className="leaflet-top leaflet-right" style={{ marginTop: 12, marginRight: 12 }}>
       <div
         ref={panelRef}
         className="leaflet-control"
         style={{ border: 'none' }}
-        // Prevent map interactions when interacting with search
-        onMouseDown={e => e.stopPropagation()}
-        onDoubleClick={e => e.stopPropagation()}
+        onMouseDown={e => { e.stopPropagation(); logger.info('[SearchControl] panel mouseDown stopped') }}
+        onDoubleClick={e => { e.stopPropagation(); logger.info('[SearchControl] panel doubleClick stopped') }}
         onWheel={e => e.stopPropagation()}
+        onTouchStart={e => { logger.info('[SearchControl] panel touchStart', { targetTag: e.target?.tagName, touches: e.touches?.length }) }}
+        onTouchEnd={e => { logger.info('[SearchControl] panel touchEnd', { targetTag: e.target?.tagName, changedTouches: e.changedTouches?.length }) }}
       >
-        <form onSubmit={handleSubmit} style={{ position: 'relative', width: 260 }}>
+        <form ref={formRef} onSubmit={handleSubmit} style={{ position: 'relative', width: 260 }}>
           <div style={{
             display: 'flex', alignItems: 'center', gap: 6,
             background: '#1e293b', border: '1px solid #475569', borderRadius: 10,
@@ -207,7 +346,20 @@ function SearchControl({ zones, allAreas, open, onClose }) {
               ref={inputRef}
               type="text"
               value={query}
-              onChange={e => setQuery(e.target.value)}
+              onChange={e => {
+                logger.info('[SearchControl] input onChange', { value: e.target.value, prevQuery: query })
+                setQuery(e.target.value)
+              }}
+              onFocus={() => {
+                logger.info('[SearchControl] input focused')
+                inputFocusedRef.current = true
+              }}
+              onBlur={() => {
+                logger.info('[SearchControl] input blurred', { activeElement: document.activeElement?.tagName })
+                // Delay clearing the flag so suggestion tap handlers can check it
+                setTimeout(() => { inputFocusedRef.current = false }, 300)
+              }}
+              onTouchStart={() => logger.info('[SearchControl] input touchStart')}
               placeholder="חפש אזור..."
               dir="rtl"
               style={{
@@ -217,41 +369,17 @@ function SearchControl({ zones, allAreas, open, onClose }) {
             />
             <button
               type="button"
-              onClick={() => onClose()}
+              onClick={() => { logger.info('[SearchControl] X button clicked — closing'); onClose() }}
               style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}
             >
               <X size={15} style={{ color: '#94a3b8' }} />
             </button>
           </div>
-
-          {suggestions.length > 0 && (
-            <div style={{
-              position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
-              background: '#1e293b', border: '1px solid #475569', borderRadius: 10,
-              boxShadow: '0 4px 16px rgba(0,0,0,0.5)', maxHeight: 220, overflowY: 'auto',
-            }}>
-              {suggestions.map(name => (
-                <button
-                  key={name}
-                  type="button"
-                  onPointerDown={(e) => { e.stopPropagation(); flyToAreaName(name) }}
-                  style={{
-                    width: '100%', textAlign: 'right', padding: '8px 12px',
-                    background: 'transparent', border: 'none', color: '#e2e8f0',
-                    fontSize: 13, fontFamily: 'Assistant, sans-serif', cursor: 'pointer',
-                    borderBottom: '1px solid #334155', direction: 'rtl',
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#334155'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                >
-                  {name}
-                </button>
-              ))}
-            </div>
-          )}
         </form>
       </div>
     </div>
+    {dropdownPortal}
+    </>
   )
 }
 
@@ -302,7 +430,11 @@ function MapControls({ rulerActive, onToggleRuler, onToggleSearch, searchOpen })
     <div className="leaflet-bottom leaflet-right" style={{ marginBottom: '30px', marginRight: '12px' }}>
       <div className="leaflet-control" style={{ border: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
         <button
-          onClick={(e) => { e.preventDefault(); onToggleSearch() }}
+          onClick={(e) => {
+            e.preventDefault()
+            logger.info('[MapControls] search toggle clicked', { currentlyOpen: searchOpen })
+            onToggleSearch()
+          }}
           title="חיפוש אזור"
           style={{ ...BTN_STYLE, background: searchOpen ? '#2563eb' : '#1e293b', transition: 'background 0.2s' }}
         >
@@ -374,18 +506,39 @@ function FlyToArea({ areaName, zones }) {
   const prevRef = useRef(null)
 
   useEffect(() => {
-    if (!areaName || !zones) return
+    logger.info('[FlyToArea] effect fired', { areaName, hasZones: !!zones, featureCount: zones?.features?.length })
+    if (!areaName || !zones) {
+      logger.info('[FlyToArea] skipped — missing areaName or zones', { areaName: !!areaName, zones: !!zones })
+      return
+    }
     const key = JSON.stringify(areaName)
-    if (key === prevRef.current) return
+    if (key === prevRef.current) {
+      logger.info('[FlyToArea] skipped — same key as previous', { key })
+      return
+    }
     prevRef.current = key
 
     const names = Array.isArray(areaName) ? areaName : [areaName]
     const features = zones.features.filter(f => names.includes(f.properties.name))
-    if (!features.length) return
+    logger.info('[FlyToArea] matched features', { requestedNames: names, matchedCount: features.length })
+    if (!features.length) {
+      logger.warn('[FlyToArea] no matching features found', { names })
+      return
+    }
     try {
       const group = L.featureGroup(features.map(f => L.geoJSON(f)))
+      const bounds = group.getBounds()
+      logger.info('[FlyToArea] flyToBounds', {
+        names,
+        bounds: { sw: [bounds.getSouthWest().lat, bounds.getSouthWest().lng], ne: [bounds.getNorthEast().lat, bounds.getNorthEast().lng] },
+        mapCenter: [map.getCenter().lat, map.getCenter().lng],
+        mapZoom: map.getZoom(),
+      })
       map.flyToBounds(group.getBounds(), { padding: [60, 60], maxZoom: 13, duration: 1.2 })
-    } catch {}
+      logger.success('[FlyToArea] flyToBounds initiated', { names })
+    } catch (err) {
+      logger.error('[FlyToArea] flyToBounds error', { names, error: String(err) })
+    }
   }, [areaName, zones, map])
 
   return null

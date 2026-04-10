@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Filter, RotateCcw, X, MapPin, Check } from 'lucide-react'
 import { ALL_FILTER_TYPES, ALL_CATEGORIES, CATEGORY_COLORS } from '../utils/heatmap'
+import * as logger from '../utils/logger'
 
 const TODAY = new Date().toISOString().slice(0, 10)
 
@@ -40,8 +41,15 @@ function AreaFilter({ areas, allAreas, onChange }) {
   // Close dropdown when clicking outside
   useEffect(() => {
     const handler = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target) &&
-          inputRef.current && !inputRef.current.contains(e.target)) {
+      const inDropdown = dropdownRef.current && dropdownRef.current.contains(e.target)
+      const inInput = inputRef.current && inputRef.current.contains(e.target)
+      logger.info('[AreaFilter] mousedown outside-check', {
+        inDropdown,
+        inInput,
+        targetTag: e.target?.tagName,
+      })
+      if (!inDropdown && !inInput) {
+        logger.info('[AreaFilter] outside click — closing dropdown')
         setShowDropdown(false)
       }
     }
@@ -55,19 +63,35 @@ function AreaFilter({ areas, allAreas, onChange }) {
     ? allAreas.filter(a => a.includes(search.trim()) && !selectedSet.has(a)).slice(0, 12)
     : []
 
+  // Log suggestion changes
+  useEffect(() => {
+    if (search.trim()) {
+      logger.info('[AreaFilter] suggestions updated', {
+        search: search.trim(),
+        count: suggestions.length,
+        first3: suggestions.slice(0, 3),
+        showDropdown,
+      })
+    }
+  }, [search, suggestions.length])
+
   const addArea = (name) => {
+    logger.info('[AreaFilter] addArea', { name, currentAreas: areas, isAll })
     const next = isAll ? [name] : [...areas, name]
     onChange(next)
     setSearch('')
+    logger.info('[AreaFilter] addArea — refocusing input')
     inputRef.current?.focus()
   }
 
   const removeArea = (name) => {
+    logger.info('[AreaFilter] removeArea', { name })
     const next = (areas || []).filter(a => a !== name)
     onChange(next.length > 0 ? next : null)
   }
 
   const selectAll = () => {
+    logger.info('[AreaFilter] selectAll')
     onChange(null)
     setSearch('')
   }
@@ -101,8 +125,17 @@ function AreaFilter({ areas, allAreas, onChange }) {
           ref={inputRef}
           type="text"
           value={search}
-          onChange={e => { setSearch(e.target.value); setShowDropdown(true) }}
-          onFocus={() => setShowDropdown(true)}
+          onChange={e => {
+            logger.info('[AreaFilter] input onChange', { value: e.target.value })
+            setSearch(e.target.value)
+            setShowDropdown(true)
+          }}
+          onFocus={() => {
+            logger.info('[AreaFilter] input focused')
+            setShowDropdown(true)
+          }}
+          onBlur={() => logger.info('[AreaFilter] input blurred', { activeElement: document.activeElement?.tagName })}
+          onTouchStart={() => logger.info('[AreaFilter] input touchStart')}
           placeholder="חפש אזור..."
           className="w-full bg-slate-700/60 border border-slate-600 rounded-lg px-3 py-2
                      text-sm text-white placeholder-slate-500 focus:outline-none
@@ -119,7 +152,12 @@ function AreaFilter({ areas, allAreas, onChange }) {
             {suggestions.map(name => (
               <button
                 key={name}
-                onClick={() => addArea(name)}
+                onClick={() => {
+                  logger.info('[AreaFilter] suggestion clicked', { name })
+                  addArea(name)
+                }}
+                onTouchStart={() => logger.info('[AreaFilter] suggestion touchStart', { name })}
+                onTouchEnd={() => logger.info('[AreaFilter] suggestion touchEnd', { name })}
                 className="w-full text-right px-3 py-2 text-sm text-slate-200
                            hover:bg-slate-600 transition-colors"
               >

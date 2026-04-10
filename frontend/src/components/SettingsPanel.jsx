@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { X, Mail, ChevronLeft, ChevronDown, ChevronUp, Download } from 'lucide-react'
+import { X, Mail, ChevronLeft, ChevronDown, ChevronUp, Download, Bug } from 'lucide-react'
 import { MAP_TILES } from '../utils/mapTiles'
 import { CATEGORY_LABELS } from '../utils/heatmap'
 import { VERSION } from '../version'
+import { exportAsText, exportAsJSON, getDeviceInfo } from '../utils/logger'
 
 const SITE_URL = 'https://yariv.org/map/'
 
@@ -50,6 +51,81 @@ function OptionRow({ label, desc, selected, onClick, disabled }) {
       <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 mr-2
         ${selected && !disabled ? 'border-blue-400' : 'border-slate-600'}`}>
         {selected && !disabled && <div className="w-2 h-2 rounded-full bg-blue-400" />}
+      </div>
+    </button>
+  )
+}
+
+function FeedbackWithLog() {
+  const [status, setStatus] = useState(null) // null | 'sharing' | 'shared' | 'downloaded' | 'error'
+
+  const handleShareLog = async () => {
+    setStatus('sharing')
+    try {
+      const logText = exportAsText(VERSION)
+      const logJSON = exportAsJSON(VERSION)
+      const now = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+      const filename = `map-debug-log-${now}.txt`
+      const jsonFilename = `map-debug-log-${now}.json`
+
+      // Try Web Share API with file (works on iOS Safari 15+)
+      if (navigator.canShare) {
+        const textFile = new File([logText], filename, { type: 'text/plain' })
+        const jsonFile = new File([logJSON], jsonFilename, { type: 'application/json' })
+        const shareData = {
+          title: `מפת התרעות — Debug Log v${VERSION}`,
+          text: `לוג דיבאג מגרסה ${VERSION}`,
+          files: [textFile, jsonFile],
+        }
+        if (navigator.canShare(shareData)) {
+          await navigator.share(shareData)
+          setStatus('shared')
+          setTimeout(() => setStatus(null), 3000)
+          return
+        }
+      }
+
+      // Fallback: download as file
+      const blob = new Blob([logText], { type: 'text/plain' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      setStatus('downloaded')
+      setTimeout(() => setStatus(null), 3000)
+    } catch (err) {
+      // User cancelled share — not an error
+      if (err?.name === 'AbortError') {
+        setStatus(null)
+        return
+      }
+      setStatus('error')
+      setTimeout(() => setStatus(null), 3000)
+    }
+  }
+
+  return (
+    <button
+      onClick={handleShareLog}
+      disabled={status === 'sharing'}
+      className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl border
+                 bg-slate-700/30 border-slate-700/50 text-slate-300 hover:bg-slate-700/60
+                 hover:text-white transition-colors text-sm disabled:opacity-60"
+    >
+      <span>
+        {status === 'sharing'   ? 'מכין לוג...' :
+         status === 'shared'    ? 'הלוג נשלח ✓' :
+         status === 'downloaded' ? 'הלוג הורד ✓' :
+         status === 'error'     ? 'שגיאה ✗' :
+         'שלח לוג דיבאג למפתח'}
+      </span>
+      <div className="flex items-center gap-1.5">
+        <Bug size={14} className="text-slate-400" />
+        <ChevronLeft size={14} className="text-slate-500" />
       </div>
     </button>
   )
@@ -235,6 +311,7 @@ export default function SettingsPanel({
                 <ChevronLeft size={14} className="text-slate-500" />
               </div>
             </a>
+            <FeedbackWithLog />
           </Section>
 
         </div>

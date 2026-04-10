@@ -3,6 +3,7 @@ import { Clock, MapPin, ChevronDown, ChevronUp, Search, X, ClipboardList } from 
 import { CATEGORY_COLORS, CATEGORY_LABELS } from '../utils/heatmap'
 import { format } from 'date-fns'
 import { he } from 'date-fns/locale'
+import * as logger from '../utils/logger'
 
 function fmtDateTime(iso) {
   if (!iso) return ''
@@ -21,7 +22,13 @@ function fmtDuration(start, end) {
 function CityChip({ city, onAreaClick, highlight }) {
   return (
     <button
-      onClick={(e) => { e.stopPropagation(); onAreaClick?.(city) }}
+      onClick={(e) => {
+        e.stopPropagation()
+        logger.info('[CityChip] clicked', { city })
+        onAreaClick?.(city)
+      }}
+      onTouchStart={() => logger.info('[CityChip] touchStart', { city })}
+      onTouchEnd={() => logger.info('[CityChip] touchEnd', { city })}
       className={`text-xs px-1.5 py-0.5 rounded transition-colors
         ${highlight
           ? 'bg-blue-900/50 border border-blue-700/50 text-blue-300 hover:text-blue-200 hover:bg-blue-800/50'
@@ -50,7 +57,10 @@ function EventRow({ event, onAreaClick, filterAreas, catColors = {} }) {
       className="bg-slate-700/40 rounded-xl p-3 space-y-2 cursor-pointer
                  hover:bg-slate-700/60 hover:ring-1 hover:ring-white/5
                  transition-all duration-150 press-effect"
-      onClick={() => allCities.length > 0 && onAreaClick?.(allCities)}
+      onClick={() => {
+        logger.info('[EventRow] card clicked', { cities: allCities.length, allCities: allCities.slice(0, 5) })
+        allCities.length > 0 && onAreaClick?.(allCities)
+      }}
     >
       {/* Header: category + status */}
       <div className="flex items-center justify-between gap-2">
@@ -148,7 +158,13 @@ function AreaSearch({ allAreas, value, onChange }) {
   const ref = useRef(null)
 
   useEffect(() => {
-    const handler = (e) => { if (!ref.current?.contains(e.target)) setOpen(false) }
+    const handler = (e) => {
+      const inside = ref.current?.contains(e.target)
+      if (!inside) {
+        logger.info('[AreaSearch] outside mousedown — closing', { targetTag: e.target?.tagName })
+        setOpen(false)
+      }
+    }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
@@ -158,13 +174,27 @@ function AreaSearch({ allAreas, value, onChange }) {
     return allAreas.filter(a => a.includes(input.trim())).slice(0, 8)
   }, [input, allAreas])
 
+  // Log suggestion changes
+  useEffect(() => {
+    if (input.trim()) {
+      logger.info('[AreaSearch] suggestions updated', {
+        input: input.trim(),
+        count: suggestions.length,
+        first3: suggestions.slice(0, 3),
+        open,
+      })
+    }
+  }, [input, suggestions.length])
+
   const select = (area) => {
+    logger.info('[AreaSearch] select', { area })
     onChange(area)
     setInput(area)
     setOpen(false)
   }
 
   const clear = () => {
+    logger.info('[AreaSearch] clear')
     onChange('')
     setInput('')
     setOpen(false)
@@ -177,8 +207,18 @@ function AreaSearch({ allAreas, value, onChange }) {
         <input
           type="text"
           value={input}
-          onChange={(e) => { setInput(e.target.value); onChange(''); setOpen(true) }}
-          onFocus={() => input.trim() && setOpen(true)}
+          onChange={(e) => {
+            logger.info('[AreaSearch] input onChange', { value: e.target.value })
+            setInput(e.target.value)
+            onChange('')
+            setOpen(true)
+          }}
+          onFocus={() => {
+            logger.info('[AreaSearch] input focused')
+            input.trim() && setOpen(true)
+          }}
+          onBlur={() => logger.info('[AreaSearch] input blurred', { activeElement: document.activeElement?.tagName })}
+          onTouchStart={() => logger.info('[AreaSearch] input touchStart')}
           placeholder="חיפוש אזור..."
           className="flex-1 bg-transparent text-sm text-white placeholder-slate-500 outline-none py-1.5"
         />
@@ -193,7 +233,12 @@ function AreaSearch({ allAreas, value, onChange }) {
           {suggestions.map(area => (
             <button
               key={area}
-              onClick={() => select(area)}
+              onClick={() => {
+                logger.info('[AreaSearch] suggestion clicked', { area })
+                select(area)
+              }}
+              onTouchStart={() => logger.info('[AreaSearch] suggestion touchStart', { area })}
+              onTouchEnd={() => logger.info('[AreaSearch] suggestion touchEnd', { area })}
               className="w-full text-right text-sm px-3 py-1.5 text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
             >
               {area}
