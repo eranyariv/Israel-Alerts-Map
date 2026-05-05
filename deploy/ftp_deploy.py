@@ -30,6 +30,8 @@ REMOTE_SITE_ROOT = '/public_html'
 
 DEPLOY_FILES = [
     # Homepage (index.html) is now managed by the yariv-org repo — do not deploy from here.
+    ('.htaccess',    '/public_html/.htaccess'),
+    ('api/proxy.php', '/public_html/api/proxy.php'),
 ]
 
 

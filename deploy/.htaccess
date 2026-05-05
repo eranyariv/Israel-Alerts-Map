@@ -30,6 +30,9 @@ RewriteRule ^oref-http/(.+)$ /api/proxy.php?host=oref-http&path=$1 [L,QSA]
 # Proxy /oref-history/* → api/proxy.php?host=oref-history&path=*
 RewriteRule ^oref-history/(.+)$ /api/proxy.php?host=oref-history&path=$1 [L,QSA]
 
+# Proxy /relay/* → Azure relay (bypasses corporate firewalls blocking *.azurecontainerapps.io)
+RewriteRule ^relay/(.*)$ /api/proxy.php?host=relay&path=$1 [L,QSA]
+
 # SPA fallback for /map/* (client-side routing)
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d

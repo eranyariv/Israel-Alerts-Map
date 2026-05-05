@@ -964,7 +964,7 @@ function AppInner() {
 
         <div className="px-4 pb-3 flex items-center justify-between">
           <a
-            href="https://redalert.orielhaim.com/"
+            href="https://siren.co.il/"
             target="_blank"
             rel="noopener noreferrer"
             className="text-[10px] text-slate-600 hover:text-slate-400 transition-colors"
@@ -1144,7 +1144,7 @@ function AppInner() {
           onTouchEnd={handleVersionTap}
         >v{VERSION}</span>
         <a
-          href="https://redalert.orielhaim.com/"
+          href="https://siren.co.il/"
           target="_blank"
           rel="noopener noreferrer"
           className="text-[10px] text-slate-600 hover:text-slate-400 transition-colors"

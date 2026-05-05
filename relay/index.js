@@ -1222,7 +1222,7 @@ app.get('/', (req, res) => {
       banner.className = 'status-banner ' + (ok ? 'ok' : 'err')
       dot.className    = 'dot ' + (ok ? 'ok' : 'err')
       title.textContent = ok ? 'Connected to RedAlert upstream' : 'Disconnected from RedAlert upstream'
-      sub.textContent   = ok ? 'Relay is live — actively receiving alerts from redalert.orielhaim.com'
+      sub.textContent   = ok ? 'Relay is live — actively receiving alerts from siren.co.il'
                              : 'Upstream connection lost — alerts may be stale. Reconnecting automatically.'
     }).catch(function() {
       document.getElementById('status-title').textContent = 'Status unavailable'
@@ -1249,7 +1249,7 @@ app.get('/', (req, res) => {
     <p>
       Israel's Home Front Command (Pikud HaOref) issues real-time alerts for rocket fire,
       hostile aircraft, terrorist infiltrations, earthquakes, and more. A third-party service
-      (<a href="https://redalert.orielhaim.com" target="_blank">redalert.orielhaim.com</a>)
+      (<a href="https://siren.co.il" target="_blank">siren.co.il</a>)
       aggregates these in real time — but consuming it requires maintaining a persistent
       Socket.IO WebSocket connection.
     </p>
@@ -1484,7 +1484,7 @@ app.get('/', (req, res) => {
 
 </div>
 
-<footer>RedAlert Relay <strong style="color:#94a3b8">v${VERSION}</strong> &nbsp;·&nbsp; Azure Container Apps, UAE North &nbsp;·&nbsp; upstream: redalert.orielhaim.com &nbsp;·&nbsp; <a href="https://yariv.org">yariv.org</a></footer>
+<footer>RedAlert Relay <strong style="color:#94a3b8">v${VERSION}</strong> &nbsp;·&nbsp; Azure Container Apps, UAE North &nbsp;·&nbsp; upstream: siren.co.il &nbsp;·&nbsp; <a href="https://yariv.org">yariv.org</a></footer>
 </div>
 </body>
 </html>`)

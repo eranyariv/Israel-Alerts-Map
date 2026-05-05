@@ -10,6 +10,7 @@ $ALLOWED_HOSTS = [
     'oref-history'      => 'https://alerts-history.oref.org.il',
     'tzevaadom-api'     => 'https://api.tzevaadom.co.il',
     'tzevaadom-static'  => 'https://www.tzevaadom.co.il',
+    'relay'             => 'https://redalert-relay.yellowforest-0da0af56.uaenorth.azurecontainerapps.io',
 ];
 
 $host = $_GET['host'] ?? '';
@@ -35,7 +36,7 @@ curl_setopt_array($ch, [
     CURLOPT_URL            => $url,
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_FOLLOWLOCATION => true,
-    CURLOPT_TIMEOUT        => 8,
+    CURLOPT_TIMEOUT        => ($host === 'relay' ? 30 : 8),
     CURLOPT_SSL_VERIFYPEER => false,
     CURLOPT_SSL_VERIFYHOST => false,
     CURLOPT_HTTPHEADER     => str_starts_with($host, 'tzevaadom') ? [
