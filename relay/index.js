@@ -1055,24 +1055,24 @@ async function autoTweet(cycleInfo, force = false) {
   return tweet.data
 }
 
-// ── Tweet scheduler: check every 5 min ────────────────────────────────────
-setInterval(async () => {
-  if (!twitterClient) return
-  try {
-    const offsetMs = getILOffsetMs()
-    const ilNow = new Date(Date.now() + offsetMs)
-    const ilMinutes = ilNow.getUTCHours() * 60 + ilNow.getUTCMinutes()
-
-    // Tweet at 06:15-06:20 (night summary) and 18:15-18:20 (day summary)
-    const isTweetWindow = (ilMinutes >= 375 && ilMinutes <= 380) || (ilMinutes >= 1095 && ilMinutes <= 1100)
-    if (!isTweetWindow) return
-
-    const cycleInfo = getCurrentCycle()
-    await autoTweet(cycleInfo)
-  } catch (e) {
-    console.error('[tweet] Scheduler error:', e.message)
-  }
-}, 5 * 60 * 1000)
+// ── Tweet scheduler: PAUSED ───────────────────────────────────────────────
+// setInterval(async () => {
+//   if (!twitterClient) return
+//   try {
+//     const offsetMs = getILOffsetMs()
+//     const ilNow = new Date(Date.now() + offsetMs)
+//     const ilMinutes = ilNow.getUTCHours() * 60 + ilNow.getUTCMinutes()
+//
+//     // Tweet at 06:15-06:20 (night summary) and 18:15-18:20 (day summary)
+//     const isTweetWindow = (ilMinutes >= 375 && ilMinutes <= 380) || (ilMinutes >= 1095 && ilMinutes <= 1100)
+//     if (!isTweetWindow) return
+//
+//     const cycleInfo = getCurrentCycle()
+//     await autoTweet(cycleInfo)
+//   } catch (e) {
+//     console.error('[tweet] Scheduler error:', e.message)
+//   }
+// }, 5 * 60 * 1000)
 
 // ── HTTP server ───────────────────────────────────────────────────────────
 
