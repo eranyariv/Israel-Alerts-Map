@@ -33,4 +33,5 @@ jobs:
           FTP_HOST: ${{ secrets.FTP_HOST }}
           FTP_USER: ${{ secrets.FTP_USER }}
           FTP_PASS: ${{ secrets.FTP_PASS }}
+          VITE_RA_RELAY_URL: https://redalert-relay.yellowforest-0da0af56.uaenorth.azurecontainerapps.io
         run: python deploy/ftp_deploy.py

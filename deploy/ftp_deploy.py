@@ -56,7 +56,7 @@ def bump_version():
 def build_frontend():
     """Run npm build in the frontend directory."""
     print('Building frontend...')
-    result = subprocess.run(['npm', 'run', 'build'], cwd=FRONTEND_DIR, shell=True)
+    result = subprocess.run('npm run build', cwd=FRONTEND_DIR, shell=True)
     if result.returncode != 0:
         raise RuntimeError('Frontend build failed')
     print('Build complete.')
