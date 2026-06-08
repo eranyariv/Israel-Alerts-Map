@@ -134,6 +134,7 @@ function FeedbackWithLog() {
 export default function SettingsPanel({
   isOpen, onClose,
   mapType, onMapTypeChange,
+  polygonOpacity = 1, onPolygonOpacityChange,
   demoMode, onDemoModeChange,
   onExportKml,
   catColors = {}, customCatColors = {}, onCatColorChange, onCatColorsReset,
@@ -257,6 +258,22 @@ export default function SettingsPanel({
             {Object.entries(MAP_TILES).map(([id, tile]) => (
               <OptionRow key={id} label={tile.label} selected={mapType === id} onClick={() => onMapTypeChange(id)} />
             ))}
+          </Section>
+
+          {/* Polygon opacity */}
+          <Section title="שקיפות מצולעים">
+            <div className="flex items-center gap-3 px-1" dir="rtl">
+              <input
+                type="range"
+                min={15}
+                max={100}
+                step={1}
+                value={Math.round(polygonOpacity * 100)}
+                onChange={(e) => onPolygonOpacityChange(Number(e.target.value) / 100)}
+                className="flex-1 accent-blue-500"
+              />
+              <span className="text-sm text-slate-300 tabular-nums w-12 text-left">{Math.round(polygonOpacity * 100)}%</span>
+            </div>
           </Section>
 
           {/* Demo mode */}

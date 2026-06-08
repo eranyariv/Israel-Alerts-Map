@@ -1161,6 +1161,8 @@ function AppInner() {
         onClose={() => setSettingsOpen(false)}
         mapType={mapType}
         onMapTypeChange={(t) => { setMapType(t); localStorage.setItem('mapType', t) }}
+        polygonOpacity={polygonOpacity}
+        onPolygonOpacityChange={(v) => { setPolygonOpacity(v); localStorage.setItem('polygonOpacity', String(v)) }}
         demoMode={demoMode}
         onDemoModeChange={setDemoMode}
         onExportKml={handleExportKml}
