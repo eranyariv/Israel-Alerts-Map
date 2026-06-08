@@ -22,12 +22,8 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Build
-        working-directory: frontend
-        env:
-          VITE_RA_RELAY_URL: https://redalert-relay.yellowforest-0da0af56.uaenorth.azurecontainerapps.io
-        run: npm run build
-
+      # Note: no separate build step — deploy/ftp_deploy.py bumps the version and
+      # rebuilds frontend/ before uploading, so a build here would just be discarded.
       - name: FTP deploy
         env:
           FTP_HOST: ${{ secrets.FTP_HOST }}
