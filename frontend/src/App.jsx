@@ -310,6 +310,7 @@ function AppInner() {
   const [debugShown,      setDebugShown]      = useState(false)
   const [settingsOpen,    setSettingsOpen]    = useState(false)
   const [mapType,         setMapType]         = useState(() => localStorage.getItem('mapType') || DEFAULT_MAP_TYPE)
+  const [polygonOpacity,  setPolygonOpacity]  = useState(() => { const v = parseFloat(localStorage.getItem('polygonOpacity')); return Number.isFinite(v) ? v : 1 })
   const [demoMode,        setDemoMode]        = useState(false)
   const [customCatColors, setCustomCatColors] = useState(() => { try { return JSON.parse(localStorage.getItem('customCatColors') || '{}') } catch { return {} } })
   const [allAreas,        setAllAreas]        = useState([])
@@ -981,7 +982,7 @@ function AppInner() {
 
       {/* -- Map ------------------------------------------------------------- */}
       <main className="flex-1 relative">
-        <Map heatmapData={heatmapData} currentAlerts={currentAlerts} flyToArea={flyToArea} mode={mode} mapType={mapType} historyView={historyView} realizationData={realizationData} catColors={catColors} peakHoursData={peakHoursData} durationData={durationData} simultaneousData={simultaneousData} sequenceData={sequenceData} allAreas={allAreas} />
+        <Map heatmapData={heatmapData} currentAlerts={currentAlerts} flyToArea={flyToArea} mode={mode} mapType={mapType} polygonOpacity={polygonOpacity} historyView={historyView} realizationData={realizationData} catColors={catColors} peakHoursData={peakHoursData} durationData={durationData} simultaneousData={simultaneousData} sequenceData={sequenceData} allAreas={allAreas} />
 
         {/* Local alert banner — flashing, floating above all map controls */}
         {localBanner && (
@@ -1160,6 +1161,8 @@ function AppInner() {
         onClose={() => setSettingsOpen(false)}
         mapType={mapType}
         onMapTypeChange={(t) => { setMapType(t); localStorage.setItem('mapType', t) }}
+        polygonOpacity={polygonOpacity}
+        onPolygonOpacityChange={(v) => { setPolygonOpacity(v); localStorage.setItem('polygonOpacity', String(v)) }}
         demoMode={demoMode}
         onDemoModeChange={setDemoMode}
         onExportKml={handleExportKml}

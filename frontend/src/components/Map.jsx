@@ -559,7 +559,7 @@ function LiveFlyTo({ currentAlerts }) {
   return null
 }
 
-export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapType = DEFAULT_MAP_TYPE, historyView = 'heatmap', realizationData = {}, catColors = {}, peakHoursData = {}, durationData = {}, simultaneousData = {}, sequenceData = {}, allAreas = [] }) {
+export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapType = DEFAULT_MAP_TYPE, polygonOpacity = 1, historyView = 'heatmap', realizationData = {}, catColors = {}, peakHoursData = {}, durationData = {}, simultaneousData = {}, sequenceData = {}, allAreas = [] }) {
   const [zones, setZones] = useState(null)
   const [rulerActive, setRulerActive] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -630,57 +630,58 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
   const defaultEmpty = { fillColor: '#1e3a5f', fillOpacity: 0.12, color: '#2d4a6b', weight: 0.4 }
 
   const getStyle = (feature) => {
+    const withOpacity = (s) => ({ ...s, fillOpacity: s.fillOpacity * polygonOpacity, opacity: polygonOpacity })
     const name = feature.properties.name
     if (mode === 'live') {
       if (liveZones.has(name)) {
         const liveColor = CAT_COLORS[liveAlertMap[name]] ?? '#ef4444'
-        return { fillColor: liveColor, fillOpacity: 0.75, color: liveColor, weight: 2 }
+        return withOpacity({ fillColor: liveColor, fillOpacity: 0.75, color: liveColor, weight: 2 })
       }
-      return { fillColor: '#1e3a5f', fillOpacity: 0.08, color: '#2d4a6b', weight: 0.3 }
+      return withOpacity({ fillColor: '#1e3a5f', fillOpacity: 0.08, color: '#2d4a6b', weight: 0.3 })
     }
 
     if (historyView === 'realization') {
       const rd = realizationData[name]
-      if (!rd || rd.total === 0) return defaultEmpty
+      if (!rd || rd.total === 0) return withOpacity(defaultEmpty)
       const norm = rd.ratio / maxRatio
       const hue = Math.round(120 * (1 - norm))
       const c = `hsl(${hue}, 85%, 42%)`
-      return { fillColor: c, fillOpacity: 0.72, color: c, weight: 1 }
+      return withOpacity({ fillColor: c, fillOpacity: 0.72, color: c, weight: 1 })
     }
 
     if (historyView === 'peakHours') {
       const ph = peakHoursData[name]
-      if (!ph) return defaultEmpty
+      if (!ph) return withOpacity(defaultEmpty)
       const c = getHourColor(ph.peakHour)
-      return { fillColor: c, fillOpacity: 0.72, color: c, weight: 1 }
+      return withOpacity({ fillColor: c, fillOpacity: 0.72, color: c, weight: 1 })
     }
 
     if (historyView === 'duration') {
       const dd = durationData?.data?.[name]
-      if (!dd) return defaultEmpty
+      if (!dd) return withOpacity(defaultEmpty)
       const c = getHeatColor(dd.totalMinutes, durationData.maxMinutes)
-      return { fillColor: c, fillOpacity: 0.72, color: c, weight: 1 }
+      return withOpacity({ fillColor: c, fillOpacity: 0.72, color: c, weight: 1 })
     }
 
     if (historyView === 'simultaneous') {
       const val = simultaneousData?.byCity?.[name]
-      if (!val) return defaultEmpty
+      if (!val) return withOpacity(defaultEmpty)
       const c = getHeatColor(val, simultaneousData.maxByCity)
-      return { fillColor: c, fillOpacity: 0.72, color: c, weight: 1 }
+      return withOpacity({ fillColor: c, fillOpacity: 0.72, color: c, weight: 1 })
     }
 
     if (historyView === 'sequences') {
       const val = sequenceData?.byCity?.[name]
-      if (!val) return defaultEmpty
+      if (!val) return withOpacity(defaultEmpty)
       const c = getHeatColor(val, sequenceData.maxScore)
-      return { fillColor: c, fillOpacity: 0.72, color: c, weight: 1 }
+      return withOpacity({ fillColor: c, fillOpacity: 0.72, color: c, weight: 1 })
     }
 
     // Default: heatmap
     const count = counts[name] ?? 0
-    if (count === 0) return defaultEmpty
+    if (count === 0) return withOpacity(defaultEmpty)
     const color = getHeatColor(count, maxCount)
-    return { fillColor: color, fillOpacity: 0.72, color: color, weight: 1 }
+    return withOpacity({ fillColor: color, fillOpacity: 0.72, color: color, weight: 1 })
   }
 
   const onEachFeature = (feature, layer) => {
@@ -798,6 +799,11 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
     ? `live-${currentAlerts.map(a => a.id).join(',')}-${liveZones.size}`
     : `${historyView}-${heatmapData?.total ?? 0}-${maxCount}-${histDataLen}-${rulerActive}`
 
+  const geoJsonRef = useRef(null)
+  useEffect(() => {
+    if (geoJsonRef.current) geoJsonRef.current.setStyle(getStyle)
+  }, [polygonOpacity])
+
   return (
     <div dir="ltr" className="w-full h-full">
     <MapContainer
@@ -825,6 +831,7 @@ export default function Map({ heatmapData, currentAlerts, flyToArea, mode, mapTy
       {zones && (
         <GeoJSON
           key={zonesKey}
+          ref={geoJsonRef}
           data={zones}
           style={getStyle}
           onEachFeature={onEachFeature}
