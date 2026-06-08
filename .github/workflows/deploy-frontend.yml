@@ -6,6 +6,8 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # allow committing the version bump back to main
 
     steps:
       - name: Checkout repo
@@ -31,3 +33,14 @@ jobs:
           FTP_PASS: ${{ secrets.FTP_PASS }}
           VITE_RA_RELAY_URL: https://redalert-relay.yellowforest-0da0af56.uaenorth.azurecontainerapps.io
         run: python deploy/ftp_deploy.py
+
+      # ftp_deploy.py bumped frontend/package.json in the working tree; persist it so
+      # the version advances on every deployment (workflow_dispatch only — no CI loop).
+      - name: Commit version bump
+        run: |
+          VERSION=$(node -p "require('./frontend/package.json').version")
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add frontend/package.json
+          git commit -m "Deploy: bump version to $VERSION"
+          git push

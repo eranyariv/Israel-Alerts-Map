@@ -36,17 +36,15 @@ DEPLOY_FILES = [
 
 
 def bump_version():
-    """Bump the patch version in package.json (e.g. 2.05 -> 2.06)."""
+    """Bump the version by 0.01 (two-digit minor). At x.99 roll over to (x+1).00."""
     pkg = json.loads(PACKAGE_JSON.read_text('utf-8'))
     old = pkg['version']
-    parts = old.split('.')
-    if len(parts) == 2:
-        major, minor = parts
-        new_minor = int(minor) + 1
-        new_version = f'{major}.{str(new_minor).zfill(len(minor))}'
-    else:
-        # fallback: just append .1
-        new_version = old + '.1'
+    major, minor = old.split('.')
+    new_major, new_minor = int(major), int(minor) + 1
+    if new_minor > 99:
+        new_major += 1
+        new_minor = 0
+    new_version = f'{new_major}.{new_minor:02d}'
     pkg['version'] = new_version
     PACKAGE_JSON.write_text(json.dumps(pkg, indent=2, ensure_ascii=False) + '\n', 'utf-8')
     print(f'Version bumped: {old} -> {new_version}')
