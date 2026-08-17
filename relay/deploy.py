@@ -1,6 +1,21 @@
 """
 Relay deploy script — bumps version by 0.01, builds in ACR, deploys to Container App.
 Usage: python relay/deploy.py
+
+!! THE RELAY IS CURRENTLY SHUT DOWN (since 2026-08-17). !!
+
+Every revision of redalert-relay was deactivated to stop it billing ~$21/month while
+idle. Running this script REVIVES IT: containerapp.yaml pins minReplicas: 1, so the
+deploy creates an active revision and the meter starts again. That may be exactly what
+you want — just know it is a restart, not only a deploy.
+
+The app was still serving ~217 requests/day when it was switched off, so whatever calls
+it has been failing since. Check that before assuming a redeploy is unwanted.
+
+To shut it down again after deploying:
+    az containerapp revision deactivate -g redalert-relay-rg -n redalert-relay \
+        --revision $(az containerapp revision list -g redalert-relay-rg \
+                     -n redalert-relay --query "[?properties.active].name" -o tsv)
 """
 import json
 import re
@@ -11,7 +26,11 @@ from pathlib import Path
 RELAY_DIR     = Path(__file__).parent
 PKG_FILE      = RELAY_DIR / 'package.json'
 YAML_FILE     = RELAY_DIR / 'containerapp.yaml'
-ACR_NAME      = 'redalertrelay'
+# Shared registry, deliberately named after another project. The relay had its own
+# registry (redalertrelay) until 2026-08-17, when four per-project Basic registries
+# were consolidated into one to save ~$15/month. It lives in aamiya-rg; do not delete
+# the Aamiya project's registry without moving these images first.
+ACR_NAME      = 'aamiyaacr'
 IMAGE         = 'redalert-relay:latest'
 APP_NAME      = 'redalert-relay'
 RESOURCE_GROUP = 'redalert-relay-rg'

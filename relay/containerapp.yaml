@@ -1,9 +1,12 @@
+# NOTE: the relay is deactivated as of 2026-08-17 (idle, ~$21/month). Applying this
+# spec restarts it — minReplicas below is 1. See the warning in deploy.py.
 properties:
   template:
     revisionSuffix: v1-57
     containers:
       - name: redalert-relay
-        image: redalertrelay.azurecr.io/redalert-relay:latest
+        # Shared registry since 2026-08-17; redalertrelay.azurecr.io was deleted.
+        image: aamiyaacr.azurecr.io/redalert-relay:latest
         resources:
           cpu: 1
           memory: 2Gi
