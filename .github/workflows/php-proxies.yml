@@ -1,0 +1,39 @@
+name: PHP Proxies On/Off
+
+# Moves the PHP proxies out of / back into the web root (issue #3, PHP2Shell).
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'disable = move out of public_html, enable = move back'
+        required: true
+        type: choice
+        options: [disable, enable]
+
+jobs:
+  toggle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Move proxies over FTP
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASS: ${{ secrets.FTP_PASS }}
+          ACTION: ${{ inputs.action }}
+        shell: python
+        run: |
+          import ftplib, os
+          LIVE = ['/public_html/api/proxy.php', '/public_html/map/ra-proxy.php']
+          PARKED = '/php-disabled'
+          with ftplib.FTP(os.environ['FTP_HOST']) as ftp:
+              ftp.login(os.environ['FTP_USER'], os.environ['FTP_PASS'])
+              ftp.set_pasv(True)
+              try:
+                  ftp.mkd(PARKED)
+              except ftplib.error_perm:
+                  pass
+              for live in LIVE:
+                  parked = PARKED + '/' + live.split('/')[-1]
+                  src, dst = (live, parked) if os.environ['ACTION'] == 'disable' else (parked, live)
+                  ftp.rename(src, dst)
+                  print(f'  OK {src} -> {dst}')
